@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 const quotes = [
   { symbol: 'MARSCOIN', icon: '/tokens/marscoin.png', mark: null, kind: 'MEME' },
-  { symbol: 'BABAB', icon: null, mark: 'BABA', kind: 'STOCK' },
+  { symbol: 'BABAB', icon: '/tokens/alibaba.png', mark: null, kind: 'STOCK' },
   { symbol: 'ASTER', icon: '/tokens/aster.jpg', mark: null, kind: 'PROTO' },
   { symbol: '牛来', icon: '/tokens/niulai.jpg', mark: null, kind: 'BSC' },
   { symbol: 'ANY BEP-20', icon: null, mark: '+', kind: 'CUSTOM' },

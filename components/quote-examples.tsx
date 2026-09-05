@@ -5,7 +5,7 @@ import type { Address } from 'viem';
 
 const quoteExamples: Array<{ symbol: string; address: Address; role: string; icon?: string; mark?: string }> = [
   { symbol: 'MARSCOIN', address: '0xfe189e97832da1573e4e4ff034f4ffc3a15c7777', role: 'Flap native', icon: '/tokens/marscoin.png' },
-  { symbol: 'BABAB', address: '0x4eF9d3062c7F6ebA4AAE4990c5036598C6eff4ec', role: 'Alibaba bStock', mark: 'BABA' },
+  { symbol: 'BABAB', address: '0x4eF9d3062c7F6ebA4AAE4990c5036598C6eff4ec', role: 'Alibaba bStock', icon: '/tokens/alibaba.png' },
   { symbol: 'ASTER', address: '0x000Ae314E2A2172a039B26378814C252734f556A', role: 'Protocol token', icon: '/tokens/aster.jpg' },
 ];
 
