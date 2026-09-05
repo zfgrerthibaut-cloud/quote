@@ -1,12 +1,12 @@
 import { ArrowRight, ExternalLink } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import type { Address } from 'viem';
-import { QuoteField } from '@/components/quote-field';
 
-const quoteExamples: Array<{ symbol: string; address: Address; role: string }> = [
-  { symbol: 'WBNB', address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', role: 'Wrapped BNB' },
-  { symbol: 'USDT', address: '0x55d398326f99059fF775485246999027B3197955', role: 'Stablecoin' },
-  { symbol: 'BTCB', address: '0x7130d2A12B9BCbFAd4f2634d864A1Ee1Ce3Ead9c', role: 'Bitcoin' },
+const quoteExamples: Array<{ symbol: string; address: Address; role: string; icon: string }> = [
+  { symbol: 'MARSCOIN', address: '0xfe189e97832da1573e4e4ff034f4ffc3a15c7777', role: 'Flap native', icon: '/tokens/marscoin.png' },
+  { symbol: 'BABAB', address: '0x4eF9d3062c7F6ebA4AAE4990c5036598C6eff4ec', role: 'Alibaba bStock', icon: '/tokens/babab.jpg' },
+  { symbol: 'ASTER', address: '0x000Ae314E2A2172a039B26378814C252734f556A', role: 'Protocol token', icon: '/tokens/aster.jpg' },
 ];
 
 export function QuoteExamples() {
@@ -24,7 +24,7 @@ export function QuoteExamples() {
 
       <div className="market-grid">
         <article className="empty-market">
-          <div className="empty-art"><QuoteField symbol="NEW" quote="WBNB" /></div>
+          <div className="empty-art"><div className="empty-rack">{Array.from({ length: 6 }, (_, index) => <i key={index}><span>{String(index + 1).padStart(2, '0')}</span></i>)}</div></div>
           <div className="empty-body">
             <div><span>MARKETS</span><b>0 verified</b></div>
             <p className="copy-en">Markets will appear from verified <code>MarketLaunched</code> events after the factory is deployed.</p>
@@ -39,7 +39,7 @@ export function QuoteExamples() {
           </div>
           {quoteExamples.map((quote) => (
             <div className="quote-row" key={quote.symbol}>
-              <span className="quote-seal">{quote.symbol.slice(0, 1)}</span>
+              <span className="quote-seal"><Image src={quote.icon} alt="" width={32} height={32} /></span>
               <div><b>{quote.symbol}</b><small>{quote.role}</small></div>
               <a href={`https://bscscan.com/token/${quote.address}`} target="_blank" rel="noreferrer" aria-label={`Inspect ${quote.symbol} on BscScan`}><ExternalLink size={14} /></a>
               <Link href={`/launch?quote=${quote.address}`} aria-label={`Use ${quote.symbol} as quote`}><ArrowRight size={15} /></Link>

@@ -1,11 +1,9 @@
 import { LaunchDesk } from '@/components/launch-desk';
-import { QuoteField } from '@/components/quote-field';
 
 export default function LaunchPage() {
   return (
     <main className="page-main">
       <section className="launch-page-stage">
-        <QuoteField />
         <header className="launch-page-copy">
           <span className="stage-kicker copy-en">New market</span>
           <span className="stage-kicker copy-zh">创建市场</span>

@@ -27,7 +27,7 @@ import {
   type SupportedFeeTier,
   type LaunchParams,
 } from '@/lib/forkpare';
-import { QuoteField } from '@/components/quote-field';
+import { PunchStrip } from '@/components/quote-switchboard';
 
 const launchSchema = z.object({
   name: z.string().trim().min(1, 'Enter a token name').max(64, '64 characters maximum'),
@@ -225,8 +225,10 @@ export function LaunchDesk() {
       </div>
 
       <div className="launch-weave-preview" aria-hidden="true">
-        <QuoteField symbol={selectedSymbol || 'TOKEN'} quote={selectedQuote || 'QUOTE'} />
-        <span>{selectedSymbol?.trim().toUpperCase() || 'TOKEN'} / {quote.symbol || 'QUOTE'}</span>
+        <div><small>BASE</small><b>{selectedSymbol?.trim().toUpperCase() || 'TOKEN'}</b></div>
+        <i>/</i>
+        <div><small>QUOTE</small><b>{quote.symbol || 'QUOTE'}</b></div>
+        <PunchStrip value={`${selectedSymbol || 'TOKEN'}:${selectedQuote || 'QUOTE'}`} />
       </div>
 
       <form onSubmit={prepared ? (event) => { event.preventDefault(); submitPreparedLaunch(); } : validateAndPrepare} noValidate>
@@ -254,9 +256,9 @@ export function LaunchDesk() {
         </label>
 
         <div className="quote-shortcuts" aria-label="Quote shortcuts">
-          <button type="button" onClick={() => { form.setValue('quoteToken', '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', { shouldValidate: true }); setQuote({ status: 'idle' }); resetPreparation(); }}>WBNB</button>
-          <button type="button" onClick={() => { form.setValue('quoteToken', '0x55d398326f99059fF775485246999027B3197955', { shouldValidate: true }); setQuote({ status: 'idle' }); resetPreparation(); }}>USDT</button>
-          <button type="button" onClick={() => { form.setValue('quoteToken', '0x7130d2A12B9BCbFAd4f2634d864A1Ee1Ce3Ead9c', { shouldValidate: true }); setQuote({ status: 'idle' }); resetPreparation(); }}>BTCB</button>
+          <button type="button" onClick={() => { form.setValue('quoteToken', '0xfe189e97832da1573e4e4ff034f4ffc3a15c7777', { shouldValidate: true }); setQuote({ status: 'idle' }); resetPreparation(); }}>MARSCOIN</button>
+          <button type="button" onClick={() => { form.setValue('quoteToken', '0x4eF9d3062c7F6ebA4AAE4990c5036598C6eff4ec', { shouldValidate: true }); setQuote({ status: 'idle' }); resetPreparation(); }}>BABAB</button>
+          <button type="button" onClick={() => { form.setValue('quoteToken', '0x000Ae314E2A2172a039B26378814C252734f556A', { shouldValidate: true }); setQuote({ status: 'idle' }); resetPreparation(); }}>ASTER</button>
         </div>
 
         <div className="price-fee-grid">
