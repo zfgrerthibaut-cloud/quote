@@ -123,6 +123,7 @@ export function LaunchDesk() {
     if (!publicClient) return;
     resetPreparation();
     setQuote({ status: 'checking' });
+    let metadataValid = false;
     try {
       const quoteToken = values.quoteToken as Address;
       const bytecode = await publicClient.getCode({ address: quoteToken });
@@ -139,13 +140,14 @@ export function LaunchDesk() {
         note: 'ERC-20 metadata responds. Transfer behavior is not guaranteed.',
       };
       setQuote(validQuote);
+      metadataValid = true;
       if (factory && address) {
         const latestBlock = await publicClient.getBlock({ blockTag: 'latest' });
         const deadline = latestBlock.timestamp + 600n;
         await buildPreparedLaunch(values, decimals, deadline);
       }
     } catch (error) {
-      if (quote.status === 'valid') {
+      if (metadataValid) {
         setPrepareError(error instanceof Error ? error.message : 'Launch simulation failed.');
       } else {
         setQuote({ status: 'invalid', note: 'Metadata or launch simulation did not pass.' });
