@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { decodeEventLog, encodeAbiParameters, encodeEventTopics } from 'viem';
 
-import { buildPriceRange, FEE_TICK_SPACING, forkPareFactoryAbi } from './forkpare.ts';
+import {
+  buildPriceRange,
+  FEE_TICK_SPACING,
+  forkPareFactoryAbi,
+  getTickAtSqrtRatio,
+  sqrtRatioAtTick,
+} from './forkpare.ts';
 
 const Q96 = 1n << 96n;
 
@@ -37,6 +43,19 @@ test('aligns launch boundaries for every supported Pancake fee tier', () => {
     assert.equal(Math.abs(token1.tickLower % spacing), 0);
     assert.equal(Math.abs(token1.tickUpper % spacing), 0);
   }
+});
+
+test('round-trips canonical V3 ticks without floating point math', () => {
+  for (const tick of [-887_271, -500_000, -138_163, -1, 0, 1, 138_162, 500_000, 887_271]) {
+    const sqrtPriceX96 = sqrtRatioAtTick(tick);
+    assert.equal(getTickAtSqrtRatio(sqrtPriceX96), tick);
+    if (tick > -887_272) assert.equal(getTickAtSqrtRatio(sqrtPriceX96 - 1n), tick - 1);
+  }
+});
+
+test('rejects V3 sqrt-ratio endpoints exactly', () => {
+  assert.throws(() => getTickAtSqrtRatio(sqrtRatioAtTick(-887_272) - 1n), /price_out_of_range/);
+  assert.throws(() => getTickAtSqrtRatio(sqrtRatioAtTick(887_272)), /price_out_of_range/);
 });
 
 test('rejects unsupported metadata decimals and zero price', () => {
