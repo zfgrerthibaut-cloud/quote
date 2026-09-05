@@ -4,11 +4,11 @@ import Image from 'next/image';
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 const quotes = [
-  { symbol: 'MARSCOIN', icon: '/tokens/marscoin.png', kind: 'MEME' },
-  { symbol: 'BABAB', icon: '/tokens/babab.jpg', kind: 'STOCK' },
-  { symbol: 'ASTER', icon: '/tokens/aster.jpg', kind: 'PROTO' },
-  { symbol: '牛来', icon: '/tokens/niulai.jpg', kind: 'BSC' },
-  { symbol: 'ANY BEP-20', icon: null, kind: 'CUSTOM' },
+  { symbol: 'MARSCOIN', icon: '/tokens/marscoin.png', mark: null, kind: 'MEME' },
+  { symbol: 'BABAB', icon: null, mark: 'BABA', kind: 'STOCK' },
+  { symbol: 'ASTER', icon: '/tokens/aster.jpg', mark: null, kind: 'PROTO' },
+  { symbol: '牛来', icon: '/tokens/niulai.jpg', mark: null, kind: 'BSC' },
+  { symbol: 'ANY BEP-20', icon: null, mark: '+', kind: 'CUSTOM' },
 ] as const;
 
 function hash32(value: string) {
@@ -73,7 +73,7 @@ export function QuoteSwitchboard() {
               >
                 <span className="cartridge-index">{String(index + 1).padStart(2, '0')}</span>
                 <span className={`token-icon token-icon-${quote.kind.toLowerCase()}`}>
-                  {quote.icon ? <Image src={quote.icon} alt="" width={42} height={42} /> : <i>+</i>}
+                  {quote.icon ? <Image src={quote.icon} alt="" width={42} height={42} /> : <i>{quote.mark}</i>}
                 </span>
                 <b>{quote.symbol}</b>
                 <PunchStrip value={quote.symbol} />

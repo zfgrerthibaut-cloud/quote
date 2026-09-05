@@ -3,9 +3,9 @@ import Image from 'next/image';
 import Link from 'next/link';
 import type { Address } from 'viem';
 
-const quoteExamples: Array<{ symbol: string; address: Address; role: string; icon: string }> = [
+const quoteExamples: Array<{ symbol: string; address: Address; role: string; icon?: string; mark?: string }> = [
   { symbol: 'MARSCOIN', address: '0xfe189e97832da1573e4e4ff034f4ffc3a15c7777', role: 'Flap native', icon: '/tokens/marscoin.png' },
-  { symbol: 'BABAB', address: '0x4eF9d3062c7F6ebA4AAE4990c5036598C6eff4ec', role: 'Alibaba bStock', icon: '/tokens/babab.jpg' },
+  { symbol: 'BABAB', address: '0x4eF9d3062c7F6ebA4AAE4990c5036598C6eff4ec', role: 'Alibaba bStock', mark: 'BABA' },
   { symbol: 'ASTER', address: '0x000Ae314E2A2172a039B26378814C252734f556A', role: 'Protocol token', icon: '/tokens/aster.jpg' },
 ];
 
@@ -39,7 +39,9 @@ export function QuoteExamples() {
           </div>
           {quoteExamples.map((quote) => (
             <div className="quote-row" key={quote.symbol}>
-              <span className="quote-seal"><Image src={quote.icon} alt="" width={32} height={32} /></span>
+              <span className={`quote-seal ${quote.mark ? 'quote-seal-stock' : ''}`}>
+                {quote.icon ? <Image src={quote.icon} alt="" width={32} height={32} /> : <b>{quote.mark}</b>}
+              </span>
               <div><b>{quote.symbol}</b><small>{quote.role}</small></div>
               <a href={`https://bscscan.com/token/${quote.address}`} target="_blank" rel="noreferrer" aria-label={`Inspect ${quote.symbol} on BscScan`}><ExternalLink size={14} /></a>
               <Link href={`/launch?quote=${quote.address}`} aria-label={`Use ${quote.symbol} as quote`}><ArrowRight size={15} /></Link>
