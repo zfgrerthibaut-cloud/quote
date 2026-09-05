@@ -27,7 +27,7 @@ import {
   type SupportedFeeTier,
   type LaunchParams,
 } from '@/lib/forkpare';
-import { PairWeave } from '@/components/pair-weave';
+import { QuoteField } from '@/components/quote-field';
 
 const launchSchema = z.object({
   name: z.string().trim().min(1, 'Enter a token name').max(64, '64 characters maximum'),
@@ -72,15 +72,10 @@ export function LaunchDesk() {
   const selectedQuote = useWatch({ control: form.control, name: 'quoteToken' });
 
   useEffect(() => {
-    const selectQuote = (event: Event) => {
-      const address = (event as CustomEvent<Address>).detail;
-      if (!isAddress(address)) return;
+    const address = new URLSearchParams(window.location.search).get('quote');
+    if (address && isAddress(address)) {
       form.setValue('quoteToken', address, { shouldDirty: true, shouldValidate: true });
-      setQuote({ status: 'idle' });
-      resetPreparation();
-    };
-    window.addEventListener('forkpare:set-quote', selectQuote);
-    return () => window.removeEventListener('forkpare:set-quote', selectQuote);
+    }
   }, [form]);
 
   const launchedMarket = useMemo(() => {
@@ -230,7 +225,7 @@ export function LaunchDesk() {
       </div>
 
       <div className="launch-weave-preview" aria-hidden="true">
-        <PairWeave symbol={selectedSymbol || 'TOKEN'} quote={selectedQuote || 'QUOTE'} />
+        <QuoteField symbol={selectedSymbol || 'TOKEN'} quote={selectedQuote || 'QUOTE'} />
         <span>{selectedSymbol?.trim().toUpperCase() || 'TOKEN'} / {quote.symbol || 'QUOTE'}</span>
       </div>
 

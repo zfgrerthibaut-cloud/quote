@@ -8,7 +8,7 @@ export function LocaleToggle() {
   useEffect(() => {
     document.documentElement.dataset.locale = locale;
     document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
-    window.dispatchEvent(new CustomEvent('spot:locale', { detail: locale }));
+    window.dispatchEvent(new CustomEvent('quote:locale', { detail: locale }));
   }, [locale]);
 
   return (

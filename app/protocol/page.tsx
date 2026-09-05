@@ -3,7 +3,7 @@ import { LaunchCurve } from '@/components/launch-curve';
 export default function ProtocolPage() {
   return (
     <main className="page-main">
-      <section className="page-hero">
+      <section className="page-hero quote-page-hero" data-mast="MECHANICS">
         <span className="stage-kicker copy-en">Protocol</span>
         <span className="stage-kicker copy-zh">协议机制</span>
         <h1 className="copy-en">Market mechanics</h1>

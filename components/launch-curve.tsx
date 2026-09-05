@@ -17,23 +17,23 @@ export function LaunchCurve() {
       autoSize: true,
       height: 300,
       layout: {
-        background: { type: ColorType.Solid, color: '#0c1112' },
-        textColor: '#626c68',
+        background: { type: ColorType.Solid, color: '#11100d' },
+        textColor: '#716960',
         fontFamily: 'var(--font-plex-mono)',
         fontSize: 10,
         attributionLogo: false,
       },
-      grid: { vertLines: { color: '#182021' }, horzLines: { color: '#182021' } },
-      rightPriceScale: { borderColor: '#283032' },
-      timeScale: { borderColor: '#283032', timeVisible: false },
+      grid: { vertLines: { color: '#201d18' }, horzLines: { color: '#201d18' } },
+      rightPriceScale: { borderColor: '#312c25' },
+      timeScale: { borderColor: '#312c25', timeVisible: false },
       handleScroll: false,
       handleScale: false,
     });
     const series = chart.addSeries(LineSeries, {
-      color: '#778dff',
+      color: '#f05238',
       lineWidth: 3,
-      crosshairMarkerBackgroundColor: '#59d9a8',
-      crosshairMarkerBorderColor: '#06090a',
+      crosshairMarkerBackgroundColor: '#d3b06d',
+      crosshairMarkerBorderColor: '#090806',
       priceFormat: { type: 'price', precision: 8, minMove: 0.00000001 },
     });
     series.setData(

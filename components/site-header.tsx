@@ -10,8 +10,9 @@ export function SiteHeader() {
 
   return (
     <nav className="topbar" aria-label="Primary navigation">
-      <Link className="brand" href="/" aria-label="Spot home">
-        <span className="wordmark">SP<span>O</span>T</span>
+      <Link className="brand" href="/" aria-label="Quote home">
+        <span className="quote-mark" aria-hidden="true"><i /></span>
+        <span className="wordmark">QUOTE</span>
       </Link>
       <div className="nav-links">
         <Link className={pathname === '/explore' ? 'active' : ''} href="/explore"><span className="copy-en">Explore</span><span className="copy-zh">市场</span></Link>
