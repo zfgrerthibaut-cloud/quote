@@ -5,57 +5,180 @@ import { ArrowUpRight, Check, LoaderCircle, ShieldCheck, TriangleAlert } from 'l
 import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { erc20Abi, isAddress } from 'viem';
-import { useAccount, useChainId, usePublicClient, useSwitchChain } from 'wagmi';
+import { erc20Abi, formatEther, isAddress, keccak256, stringToHex, type Address, type Hash } from 'viem';
+import {
+  useAccount,
+  useChainId,
+  usePublicClient,
+  useSwitchChain,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from 'wagmi';
 import { bsc } from 'wagmi/chains';
 import { z } from 'zod';
+
+import {
+  buildPriceRange,
+  configuredFactory,
+  DEFAULT_FEE_TIER,
+  FIXED_SUPPLY,
+  forkPareFactoryAbi,
+  type LaunchParams,
+} from '@/lib/forkpare';
 
 const launchSchema = z.object({
   name: z.string().trim().min(1, 'Enter a token name').max(64, '64 characters maximum'),
   symbol: z.string().trim().min(1, 'Enter a ticker').max(12, '12 characters maximum').regex(/^[A-Za-z0-9]+$/, 'Letters and numbers only'),
   quoteToken: z.string().trim().refine(isAddress, 'Enter a valid BEP-20 address'),
+  startingPrice: z.string().trim().regex(/^\d+(\.\d+)?$/, 'Enter a positive decimal price').refine((value) => Number(value) > 0, 'Price must be above zero'),
 });
 
 type LaunchForm = z.infer<typeof launchSchema>;
 type QuoteState = { status: 'idle' | 'checking' | 'valid' | 'invalid'; symbol?: string; decimals?: number; note?: string };
+type PreparedLaunch = { params: LaunchParams; predictedToken: Address; creationFee: bigint };
+
+function addressNumber(address: Address) {
+  return BigInt(address.toLowerCase());
+}
 
 export function LaunchDesk() {
   const publicClient = usePublicClient();
   const chainId = useChainId();
-  const { isConnected } = useAccount();
+  const { address, isConnected } = useAccount();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
+  const { writeContract, data: transactionHash, isPending: isSigning, error: writeError } = useWriteContract();
+  const receipt = useWaitForTransactionReceipt({ hash: transactionHash as Hash | undefined });
   const [quote, setQuote] = useState<QuoteState>({ status: 'idle' });
+  const [prepared, setPrepared] = useState<PreparedLaunch>();
+  const [prepareError, setPrepareError] = useState<string>();
+  const factory = configuredFactory();
+
   const form = useForm<LaunchForm>({
     resolver: zodResolver(launchSchema),
     defaultValues: {
       name: 'Fork Market',
       symbol: 'FORK',
       quoteToken: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
+      startingPrice: '0.000001',
     },
   });
 
-  const validateQuote = form.handleSubmit(async ({ quoteToken }) => {
+  function resetPreparation() {
+    setPrepared(undefined);
+    setPrepareError(undefined);
+  }
+
+  async function buildPreparedLaunch(values: LaunchForm, quoteDecimals: number, deadline: bigint) {
+    if (!publicClient || !factory || !address) return;
+    const quoteToken = values.quoteToken as Address;
+    const creationFee = await publicClient.readContract({
+      address: factory,
+      abi: forkPareFactoryAbi,
+      functionName: 'creationFee',
+    });
+
+    for (let attempt = 0; attempt < 64; attempt += 1) {
+      for (const launchTokenIsToken0 of [true, false]) {
+        const range = buildPriceRange(values.startingPrice, quoteDecimals, launchTokenIsToken0);
+        const userSalt = keccak256(stringToHex(`${address}:${values.name}:${values.symbol}:${attempt}`));
+        const params: LaunchParams = {
+          name: values.name.trim(),
+          symbol: values.symbol.trim().toUpperCase(),
+          supply: FIXED_SUPPLY,
+          quoteToken,
+          feeTier: DEFAULT_FEE_TIER,
+          sqrtPriceX96: range.sqrtPriceX96,
+          tickLower: range.tickLower,
+          tickUpper: range.tickUpper,
+          deadline,
+          userSalt,
+        };
+        const predictedToken = await publicClient.readContract({
+          address: factory,
+          abi: forkPareFactoryAbi,
+          functionName: 'predictToken',
+          args: [address, params],
+        });
+        const consistent = launchTokenIsToken0
+          ? addressNumber(predictedToken) < addressNumber(quoteToken)
+          : addressNumber(predictedToken) > addressNumber(quoteToken);
+        if (!consistent) continue;
+
+        await publicClient.simulateContract({
+          account: address,
+          address: factory,
+          abi: forkPareFactoryAbi,
+          functionName: 'launch',
+          args: [params],
+          value: creationFee,
+        });
+        setPrepared({ params, predictedToken, creationFee });
+        return;
+      }
+    }
+    throw new Error('Could not derive a deterministic token ordering. Change the token name and retry.');
+  }
+
+  const validateAndPrepare = form.handleSubmit(async (values) => {
     if (!publicClient) return;
+    resetPreparation();
     setQuote({ status: 'checking' });
     try {
-      const bytecode = await publicClient.getCode({ address: quoteToken as `0x${string}` });
+      const quoteToken = values.quoteToken as Address;
+      const bytecode = await publicClient.getCode({ address: quoteToken });
       if (!bytecode || bytecode === '0x') {
         setQuote({ status: 'invalid', note: 'No contract code at this address on BSC.' });
         return;
       }
-
       const [symbol, decimals] = await Promise.all([
-        publicClient.readContract({ address: quoteToken as `0x${string}`, abi: erc20Abi, functionName: 'symbol' }),
-        publicClient.readContract({ address: quoteToken as `0x${string}`, abi: erc20Abi, functionName: 'decimals' }),
+        publicClient.readContract({ address: quoteToken, abi: erc20Abi, functionName: 'symbol' }),
+        publicClient.readContract({ address: quoteToken, abi: erc20Abi, functionName: 'decimals' }),
       ]);
-      setQuote({ status: 'valid', symbol, decimals, note: 'ERC-20 metadata responds. Transfer behavior is not guaranteed.' });
-    } catch {
-      setQuote({ status: 'invalid', note: 'This contract does not expose standard ERC-20 metadata.' });
+      const validQuote: QuoteState = {
+        status: 'valid', symbol, decimals,
+        note: 'ERC-20 metadata responds. Transfer behavior is not guaranteed.',
+      };
+      setQuote(validQuote);
+      if (factory && address) {
+        const latestBlock = await publicClient.getBlock({ blockTag: 'latest' });
+        const deadline = latestBlock.timestamp + 600n;
+        await buildPreparedLaunch(values, decimals, deadline);
+      }
+    } catch (error) {
+      if (quote.status === 'valid') {
+        setPrepareError(error instanceof Error ? error.message : 'Launch simulation failed.');
+      } else {
+        setQuote({ status: 'invalid', note: 'Metadata or launch simulation did not pass.' });
+      }
     }
   });
 
+  function submitPreparedLaunch() {
+    if (!factory || !prepared) return;
+    writeContract({
+      address: factory,
+      abi: forkPareFactoryAbi,
+      functionName: 'launch',
+      args: [prepared.params],
+      value: prepared.creationFee,
+    });
+  }
+
   const wrongNetwork = isConnected && chainId !== bsc.id;
-  const ctaLabel = wrongNetwork ? 'Switch to BSC' : quote.status === 'checking' ? 'Reading BSC state…' : quote.status === 'valid' ? 'Launch preview ready' : 'Validate quote on BSC';
+  const isBusy = quote.status === 'checking' || isSwitching || isSigning || receipt.isLoading;
+  const ctaLabel = wrongNetwork
+    ? 'Switch to BSC'
+    : isSigning
+      ? 'Confirm in wallet…'
+      : receipt.isLoading
+        ? 'Waiting for receipt…'
+        : prepared
+          ? `Launch · ${formatEther(prepared.creationFee)} BNB`
+          : quote.status === 'checking'
+            ? 'Reading BSC state…'
+            : quote.status === 'valid' && !factory
+              ? 'Read-only preview ready'
+              : 'Validate and simulate';
 
   return (
     <div className="launch-desk" id="launch">
@@ -64,16 +187,16 @@ export function LaunchDesk() {
         <span className="network-pill"><span /> BSC · 56</span>
       </div>
 
-      <form onSubmit={validateQuote} noValidate>
+      <form onSubmit={prepared ? (event) => { event.preventDefault(); submitPreparedLaunch(); } : validateAndPrepare} noValidate>
         <div className="field-grid">
           <label>
             <span>Token name</span>
-            <input aria-invalid={Boolean(form.formState.errors.name)} {...form.register('name')} />
+            <input aria-invalid={Boolean(form.formState.errors.name)} {...form.register('name', { onChange: resetPreparation })} />
             {form.formState.errors.name && <small className="field-error">{form.formState.errors.name.message}</small>}
           </label>
           <label>
             <span>Ticker</span>
-            <input aria-invalid={Boolean(form.formState.errors.symbol)} maxLength={12} {...form.register('symbol')} />
+            <input aria-invalid={Boolean(form.formState.errors.symbol)} maxLength={12} {...form.register('symbol', { onChange: resetPreparation })} />
             {form.formState.errors.symbol && <small className="field-error">{form.formState.errors.symbol.message}</small>}
           </label>
         </div>
@@ -81,28 +204,31 @@ export function LaunchDesk() {
         <label className="quote-field">
           <span>Quote token address</span>
           <div className="quote-address-field">
-            <input aria-invalid={Boolean(form.formState.errors.quoteToken)} {...form.register('quoteToken', { onChange: () => setQuote({ status: 'idle' }) })} />
+            <input aria-invalid={Boolean(form.formState.errors.quoteToken)} {...form.register('quoteToken', { onChange: () => { setQuote({ status: 'idle' }); resetPreparation(); } })} />
             {quote.status === 'checking' && <LoaderCircle className="spin" size={17} />}
             {quote.status === 'valid' && <Check size={17} />}
           </div>
           {form.formState.errors.quoteToken && <small className="field-error">{form.formState.errors.quoteToken.message}</small>}
         </label>
 
+        <label className="price-field">
+          <span>Starting price · quote per 1 token</span>
+          <input inputMode="decimal" aria-invalid={Boolean(form.formState.errors.startingPrice)} {...form.register('startingPrice', { onChange: resetPreparation })} />
+          {form.formState.errors.startingPrice && <small className="field-error">{form.formState.errors.startingPrice.message}</small>}
+        </label>
+
         <AnimatePresence initial={false}>
           {quote.status !== 'idle' && quote.status !== 'checking' && (
-            <motion.div
-              className={`quote-result ${quote.status}`}
-              role="status"
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.16 }}
-            >
+            <motion.div className={`quote-result ${quote.status}`} role="status" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
               {quote.status === 'valid' ? <Check size={15} /> : <TriangleAlert size={15} />}
               <span>{quote.symbol && <b>{quote.symbol} · {quote.decimals} decimals</b>}{quote.note}</span>
             </motion.div>
           )}
         </AnimatePresence>
+
+        {prepared && <div className="prepared-launch"><span>Predicted token</span><b>{prepared.predictedToken}</b><span>Range</span><b>{prepared.params.tickLower} → {prepared.params.tickUpper}</b></div>}
+        {(prepareError || writeError) && <p className="transaction-error" role="alert"><TriangleAlert size={14} /> {prepareError || writeError?.message}</p>}
+        {receipt.isSuccess && <p className="transaction-success" role="status"><Check size={14} /> Included in block {receipt.data.blockNumber.toString()} · {transactionHash}</p>}
 
         <div className="launch-summary">
           <div><span>Supply</span><b>100,000,000</b></div>
@@ -113,14 +239,14 @@ export function LaunchDesk() {
         <button
           className="launch-button"
           type={wrongNetwork ? 'button' : 'submit'}
-          disabled={quote.status === 'checking' || isSwitching}
+          disabled={isBusy || (prepared ? !factory : false)}
           onClick={wrongNetwork ? () => switchChain({ chainId: bsc.id }) : undefined}
         >
           {ctaLabel} <ArrowUpRight size={18} />
         </button>
       </form>
 
-      <p className="desk-note"><Check size={13} /> No mint key · no creator allocation · no transaction sent during preview</p>
+      <p className="desk-note"><Check size={13} /> Simulation required · exact receipt required · factory currently not deployed</p>
     </div>
   );
 }
