@@ -6,6 +6,7 @@ import {
   Search,
 } from 'lucide-react';
 import { LaunchDesk } from '@/components/launch-desk';
+import { LaunchCurve } from '@/components/launch-curve';
 import { WalletControl } from '@/components/wallet-control';
 
 const markets = [
@@ -73,8 +74,18 @@ export default function Home() {
         <p className="table-note">Read-only snapshot · BSC block 120,162,155. Contract code is not a safety rating.</p>
       </section>
 
+      <section className="curve-section" aria-labelledby="curve-title">
+        <div>
+          <span className="section-index">03 / PRICE RANGE</span>
+          <h2 id="curve-title">The pool is the curve.</h2>
+          <p>No private market maker and no graduation switch. The one-sided Pancake V3 range releases supply as buyers move the price. Exact ticks are shown before signature.</p>
+          <small>Illustrative shape · not a live quote</small>
+        </div>
+        <LaunchCurve />
+      </section>
+
       <section className="mechanism" id="protocol">
-        <div className="mechanism-title"><span className="section-index">03 / THE CONTRACT</span><h2>One launch.<br />No hidden sequel.</h2></div>
+        <div className="mechanism-title"><span className="section-index">04 / THE CONTRACT</span><h2>One launch.<br />No hidden sequel.</h2></div>
         <ol>
           <li><span>01</span><div><h3>Deploy</h3><p>A deterministic fixed-supply token is created from audited bytecode.</p></div></li>
           <li><span>02</span><div><h3>Pair</h3><p>The chosen quote asset and fee tier are validated onchain.</p></div></li>

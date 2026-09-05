@@ -2,6 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowUpRight, Check, LoaderCircle, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { erc20Abi, isAddress } from 'viem';
@@ -87,12 +88,21 @@ export function LaunchDesk() {
           {form.formState.errors.quoteToken && <small className="field-error">{form.formState.errors.quoteToken.message}</small>}
         </label>
 
-        {quote.status !== 'idle' && quote.status !== 'checking' && (
-          <div className={`quote-result ${quote.status}`} role="status">
-            {quote.status === 'valid' ? <Check size={15} /> : <TriangleAlert size={15} />}
-            <span>{quote.symbol && <b>{quote.symbol} · {quote.decimals} decimals</b>}{quote.note}</span>
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {quote.status !== 'idle' && quote.status !== 'checking' && (
+            <motion.div
+              className={`quote-result ${quote.status}`}
+              role="status"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.16 }}
+            >
+              {quote.status === 'valid' ? <Check size={15} /> : <TriangleAlert size={15} />}
+              <span>{quote.symbol && <b>{quote.symbol} · {quote.decimals} decimals</b>}{quote.note}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="launch-summary">
           <div><span>Supply</span><b>100,000,000</b></div>
