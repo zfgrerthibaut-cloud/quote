@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { decodeEventLog, encodeAbiParameters, encodeEventTopics } from 'viem';
 
-import { buildPriceRange } from './forkpare.ts';
+import { buildPriceRange, forkPareFactoryAbi } from './forkpare.ts';
 
 const Q96 = 1n << 96n;
 
@@ -30,4 +31,30 @@ test('accounts for quote decimals without floating point amount parsing', () => 
 test('rejects unsupported metadata decimals and zero price', () => {
   assert.throws(() => buildPriceRange('1', 37, true), /unsupported_decimals/);
   assert.throws(() => buildPriceRange('0', 18, true), /zero_price/);
+});
+
+test('decodes the exact MarketLaunched receipt used by the UI', () => {
+  const creator = '0x1111111111111111111111111111111111111111';
+  const token = '0x2222222222222222222222222222222222222222';
+  const quoteToken = '0x3333333333333333333333333333333333333333';
+  const pool = '0x4444444444444444444444444444444444444444';
+  const locker = '0x5555555555555555555555555555555555555555';
+  const topics = encodeEventTopics({
+    abi: forkPareFactoryAbi,
+    eventName: 'MarketLaunched',
+    args: { launchId: 7n, creator, token },
+  });
+  const data = encodeAbiParameters(
+    [
+      { type: 'address' }, { type: 'address' }, { type: 'address' },
+      { type: 'uint256' }, { type: 'uint256' }, { type: 'uint160' },
+      { type: 'int24' }, { type: 'int24' }, { type: 'uint24' },
+    ],
+    [quoteToken, pool, locker, 99n, 100_000_000n * 10n ** 18n, Q96, 0, 887_270, 500],
+  );
+
+  const decoded = decodeEventLog({ abi: forkPareFactoryAbi, eventName: 'MarketLaunched', topics, data });
+  assert.equal(decoded.args.token, token);
+  assert.equal(decoded.args.pool, pool);
+  assert.equal(decoded.args.locker, locker);
 });

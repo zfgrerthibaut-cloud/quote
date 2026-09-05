@@ -36,6 +36,24 @@ const launchParamComponents = [
 
 export const forkPareFactoryAbi = [
   {
+    type: 'event',
+    name: 'MarketLaunched',
+    inputs: [
+      { indexed: true, name: 'launchId', type: 'uint256' },
+      { indexed: true, name: 'creator', type: 'address' },
+      { indexed: true, name: 'token', type: 'address' },
+      { indexed: false, name: 'quoteToken', type: 'address' },
+      { indexed: false, name: 'pool', type: 'address' },
+      { indexed: false, name: 'locker', type: 'address' },
+      { indexed: false, name: 'positionTokenId', type: 'uint256' },
+      { indexed: false, name: 'supply', type: 'uint256' },
+      { indexed: false, name: 'sqrtPriceX96', type: 'uint160' },
+      { indexed: false, name: 'tickLower', type: 'int24' },
+      { indexed: false, name: 'tickUpper', type: 'int24' },
+      { indexed: false, name: 'feeTier', type: 'uint24' },
+    ],
+  },
+  {
     type: 'function', name: 'creationFee', stateMutability: 'view', inputs: [],
     outputs: [{ name: '', type: 'uint256' }],
   },

@@ -2,18 +2,11 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   CircleDot,
-  ExternalLink,
-  Search,
 } from 'lucide-react';
 import { LaunchDesk } from '@/components/launch-desk';
 import { LaunchCurve } from '@/components/launch-curve';
+import { QuoteExamples } from '@/components/quote-examples';
 import { WalletControl } from '@/components/wallet-control';
-
-const markets = [
-  { symbol: 'WBNB', address: '0xbb4C…095c', role: 'Native route', status: 'Code found' },
-  { symbol: 'USDT', address: '0x55d3…7955', role: 'Stable quote', status: 'Code found' },
-  { symbol: 'BTCB', address: '0x7130…ad9c', role: 'Bitcoin quote', status: 'Code found' },
-];
 
 export default function Home() {
   return (
@@ -29,9 +22,6 @@ export default function Home() {
           <a href="#protocol">Protocol</a>
         </div>
         <div className="nav-actions">
-          <button className="search-button" type="button" aria-label="Search markets">
-            <Search size={16} /> <span>Search</span><kbd>/</kbd>
-          </button>
           <WalletControl />
         </div>
       </nav>
@@ -53,26 +43,7 @@ export default function Home() {
         <LaunchDesk />
       </section>
 
-      <section className="market-strip" id="markets">
-        <header>
-          <div><span className="section-index">02 / QUOTE EXAMPLES</span><h2>Quote assets, not an allowlist</h2></div>
-          <a href="https://bscscan.com" target="_blank" rel="noreferrer">BscScan <ExternalLink size={15} /></a>
-        </header>
-        <div className="market-table" role="table" aria-label="Example quote assets">
-          <div className="market-row table-head" role="row">
-            <span>Asset</span><span>Address</span><span>Use</span><span>RPC check</span><span aria-hidden="true" />
-          </div>
-          {markets.map((market) => (
-            <div className="market-row" role="row" key={market.symbol}>
-              <span className="pair"><i>{market.symbol.slice(0, 1)}</i><b>{market.symbol}</b></span>
-              <span>{market.address}</span><span>{market.role}</span>
-              <span className="positive">{market.status}</span>
-              <button type="button" aria-label={`Use ${market.symbol} as quote`}><ArrowUpRight size={16} /></button>
-            </div>
-          ))}
-        </div>
-        <p className="table-note">Read-only snapshot · BSC block 120,162,155. Contract code is not a safety rating.</p>
-      </section>
+      <QuoteExamples />
 
       <section className="curve-section" aria-labelledby="curve-title">
         <div>
@@ -87,8 +58,8 @@ export default function Home() {
       <section className="mechanism" id="protocol">
         <div className="mechanism-title"><span className="section-index">04 / THE CONTRACT</span><h2>One launch.<br />No hidden sequel.</h2></div>
         <ol>
-          <li><span>01</span><div><h3>Deploy</h3><p>A deterministic fixed-supply token is created from audited bytecode.</p></div></li>
-          <li><span>02</span><div><h3>Pair</h3><p>The chosen quote asset and fee tier are validated onchain.</p></div></li>
+          <li><span>01</span><div><h3>Deploy</h3><p>A deterministic, fixed-supply token is created from published bytecode.</p></div></li>
+          <li><span>02</span><div><h3>Pair</h3><p>The quote contract, fee tier, price and range are checked onchain before signature.</p></div></li>
           <li><span>03</span><div><h3>Lock</h3><p>Supply enters the liquidity position; ownership cannot be reclaimed.</p></div></li>
           <li><span>04</span><div><h3>Trade</h3><p>Users route directly through PancakeSwap with explicit slippage.</p></div></li>
         </ol>

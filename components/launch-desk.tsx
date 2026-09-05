@@ -3,9 +3,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowUpRight, Check, LoaderCircle, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { erc20Abi, formatEther, isAddress, keccak256, stringToHex, type Address, type Hash } from 'viem';
+import { erc20Abi, formatEther, isAddress, keccak256, parseEventLogs, stringToHex, type Address, type Hash } from 'viem';
 import {
   useAccount,
   useChainId,
@@ -62,6 +62,29 @@ export function LaunchDesk() {
       startingPrice: '0.000001',
     },
   });
+
+  useEffect(() => {
+    const selectQuote = (event: Event) => {
+      const address = (event as CustomEvent<Address>).detail;
+      if (!isAddress(address)) return;
+      form.setValue('quoteToken', address, { shouldDirty: true, shouldValidate: true });
+      setQuote({ status: 'idle' });
+      resetPreparation();
+    };
+    window.addEventListener('forkpare:set-quote', selectQuote);
+    return () => window.removeEventListener('forkpare:set-quote', selectQuote);
+  }, [form]);
+
+  const launchedMarket = useMemo(() => {
+    if (!receipt.data) return undefined;
+    const logs = parseEventLogs({
+      abi: forkPareFactoryAbi,
+      eventName: 'MarketLaunched',
+      logs: receipt.data.logs,
+      strict: false,
+    });
+    return logs[0]?.args;
+  }, [receipt.data]);
 
   function resetPreparation() {
     setPrepared(undefined);
@@ -206,7 +229,7 @@ export function LaunchDesk() {
         <label className="quote-field">
           <span>Quote token address</span>
           <div className="quote-address-field">
-            <input aria-invalid={Boolean(form.formState.errors.quoteToken)} {...form.register('quoteToken', { onChange: () => { setQuote({ status: 'idle' }); resetPreparation(); } })} />
+            <input id="quote-token-input" aria-invalid={Boolean(form.formState.errors.quoteToken)} {...form.register('quoteToken', { onChange: () => { setQuote({ status: 'idle' }); resetPreparation(); } })} />
             {quote.status === 'checking' && <LoaderCircle className="spin" size={17} />}
             {quote.status === 'valid' && <Check size={17} />}
           </div>
@@ -230,7 +253,21 @@ export function LaunchDesk() {
 
         {prepared && <div className="prepared-launch"><span>Predicted token</span><b>{prepared.predictedToken}</b><span>Range</span><b>{prepared.params.tickLower} → {prepared.params.tickUpper}</b></div>}
         {(prepareError || writeError) && <p className="transaction-error" role="alert"><TriangleAlert size={14} /> {prepareError || writeError?.message}</p>}
-        {receipt.isSuccess && <p className="transaction-success" role="status"><Check size={14} /> Included in block {receipt.data.blockNumber.toString()} · {transactionHash}</p>}
+        {receipt.isSuccess && (
+          <div className="transaction-success" role="status">
+            <Check size={14} />
+            <span>
+              Included in block {receipt.data.blockNumber.toString()} ·{' '}
+              <a href={`https://bscscan.com/tx/${transactionHash}`} target="_blank" rel="noreferrer">receipt</a>
+              {launchedMarket?.token && (
+                <> · <a href={`https://bscscan.com/token/${launchedMarket.token}`} target="_blank" rel="noreferrer">token</a></>
+              )}
+              {launchedMarket?.pool && (
+                <> · <a href={`https://bscscan.com/address/${launchedMarket.pool}`} target="_blank" rel="noreferrer">pool</a></>
+              )}
+            </span>
+          </div>
+        )}
 
         <div className="launch-summary">
           <div><span>Supply</span><b>100,000,000</b></div>
@@ -248,7 +285,7 @@ export function LaunchDesk() {
         </button>
       </form>
 
-      <p className="desk-note"><Check size={13} /> Simulation required · exact receipt required · factory currently not deployed</p>
+      <p className="desk-note"><Check size={13} /> {factory ? 'Factory configured · simulation and exact receipt required' : 'Read-only prototype · factory not deployed'}</p>
     </div>
   );
 }
