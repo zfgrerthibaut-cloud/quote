@@ -21,7 +21,6 @@ export function SiteHeader() {
       </div>
       <div className="nav-actions">
         <LocaleToggle />
-        <span className="chain-light"><i /> BSC · 56</span>
         <WalletControl />
       </div>
     </nav>

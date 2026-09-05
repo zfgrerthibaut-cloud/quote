@@ -56,8 +56,6 @@ html[data-locale='zh'] body { font-family: var(--font-noto-sc), var(--font-instr
 .nav-actions { justify-self: end; display: flex; align-items: center; gap: 12px; }
 .locale-toggle { border: 0; padding: 5px 2px; background: none; color: var(--secondary); cursor: pointer; font: 500 9px var(--font-plex-mono); }
 .locale-toggle:hover { color: var(--text); }
-.chain-light { height: 34px; padding: 0 10px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 8px; color: var(--secondary); font: 500 9px var(--font-plex-mono); letter-spacing: .06em; }
-.chain-light i { width: 5px; height: 5px; background: var(--bnb); border-radius: 50%; box-shadow: 0 0 10px rgba(240, 185, 11, .45); }
 .wallet-button { height: 36px; padding: 0 13px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--text); color: #0a0d0d; cursor: pointer; font: 600 11px var(--font-instrument), sans-serif; transition: background .16s ease, border-color .16s ease; }
 .wallet-button:hover { background: #fff; border-color: #fff; }
 .wallet-button:disabled { opacity: .48; cursor: not-allowed; }
@@ -271,7 +269,6 @@ footer { min-height: 68px; padding: 0 clamp(20px, 4vw, 64px); display: flex; ali
   .nav-links { display: flex; justify-content: center; gap: 14px; }
   .nav-links a { font-size: 10px; }
   .nav-links a:last-child { display: none; }
-  .chain-light { display: none; }
   .locale-toggle { margin-right: 0; font-size: 10px; }
   .nav-actions { gap: 7px; }
   .nav-actions { position: absolute; right: 14px; top: 12px; }

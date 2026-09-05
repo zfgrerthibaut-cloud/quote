@@ -10,8 +10,6 @@ export default function Home() {
         <div className="quote-mast" aria-hidden="true">QUOTE</div>
 
         <div className="quote-intro">
-          <span className="stage-kicker copy-en">BNB Chain token launchpad</span>
-          <span className="stage-kicker copy-zh">BNB Chain 代币发行平台</span>
           <h1 className="copy-en">Launch your token.<br /><em>Quote it in any token.</em></h1>
           <h1 className="copy-zh">发行你的代币。<br /><em>用任意代币计价。</em></h1>
           <p className="copy-en">Choose any compatible BEP-20 as the quote asset.</p>
