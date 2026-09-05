@@ -27,6 +27,7 @@ import {
   type SupportedFeeTier,
   type LaunchParams,
 } from '@/lib/forkpare';
+import { PairWeave } from '@/components/pair-weave';
 
 const launchSchema = z.object({
   name: z.string().trim().min(1, 'Enter a token name').max(64, '64 characters maximum'),
@@ -59,14 +60,16 @@ export function LaunchDesk() {
   const form = useForm<LaunchForm>({
     resolver: zodResolver(launchSchema),
     defaultValues: {
-      name: 'Fork Market',
-      symbol: 'FORK',
+      name: '',
+      symbol: '',
       quoteToken: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
       startingPrice: '0.000001',
       feeTier: DEFAULT_FEE_TIER,
     },
   });
   const selectedFeeTier = useWatch({ control: form.control, name: 'feeTier' });
+  const selectedSymbol = useWatch({ control: form.control, name: 'symbol' });
+  const selectedQuote = useWatch({ control: form.control, name: 'quoteToken' });
 
   useEffect(() => {
     const selectQuote = (event: Event) => {
@@ -213,49 +216,63 @@ export function LaunchDesk() {
           : quote.status === 'checking'
             ? 'Reading BSC state…'
             : quote.status === 'valid' && !factory
-              ? 'Read-only preview ready'
-              : 'Validate and simulate';
+              ? 'Quote verified on BSC'
+              : 'Check market on BSC';
 
   return (
     <div className="launch-desk" id="launch">
       <div className="desk-head">
-        <div><span className="section-index">01 / CREATE MARKET</span><h2>Configure the pair</h2></div>
-        <span className="network-pill"><span /> BSC · 56</span>
+        <div>
+          <span className="copy-en">New market</span><span className="copy-zh">创建新市场</span>
+          <h2 className="copy-en">Launch console</h2><h2 className="copy-zh">发行面板</h2>
+        </div>
+        <span className={`network-pill ${factory ? 'is-ready' : 'is-offline'}`}><span /> {factory ? 'READY' : 'PREVIEW'}</span>
+      </div>
+
+      <div className="launch-weave-preview" aria-hidden="true">
+        <PairWeave symbol={selectedSymbol || 'TOKEN'} quote={selectedQuote || 'QUOTE'} />
+        <span>{selectedSymbol?.trim().toUpperCase() || 'TOKEN'} / {quote.symbol || 'QUOTE'}</span>
       </div>
 
       <form onSubmit={prepared ? (event) => { event.preventDefault(); submitPreparedLaunch(); } : validateAndPrepare} noValidate>
         <div className="field-grid">
           <label>
-            <span>Token name</span>
-            <input aria-invalid={Boolean(form.formState.errors.name)} {...form.register('name', { onChange: resetPreparation })} />
+            <span><b className="copy-en">Token name</b><b className="copy-zh">代币名称</b></span>
+            <input placeholder="Name your token" aria-invalid={Boolean(form.formState.errors.name)} {...form.register('name', { onChange: resetPreparation })} />
             {form.formState.errors.name && <small className="field-error">{form.formState.errors.name.message}</small>}
           </label>
           <label>
-            <span>Ticker</span>
-            <input aria-invalid={Boolean(form.formState.errors.symbol)} maxLength={12} {...form.register('symbol', { onChange: resetPreparation })} />
+            <span><b className="copy-en">Symbol</b><b className="copy-zh">代币代码</b></span>
+            <input placeholder="TICK" aria-invalid={Boolean(form.formState.errors.symbol)} maxLength={12} {...form.register('symbol', { onChange: resetPreparation })} />
             {form.formState.errors.symbol && <small className="field-error">{form.formState.errors.symbol.message}</small>}
           </label>
         </div>
 
         <label className="quote-field">
-          <span>Quote token address</span>
+          <span><b className="copy-en">Quote token</b><b className="copy-zh">计价代币地址</b></span>
           <div className="quote-address-field">
-            <input id="quote-token-input" aria-invalid={Boolean(form.formState.errors.quoteToken)} {...form.register('quoteToken', { onChange: () => { setQuote({ status: 'idle' }); resetPreparation(); } })} />
+            <input id="quote-token-input" defaultValue="0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" aria-invalid={Boolean(form.formState.errors.quoteToken)} {...form.register('quoteToken', { onChange: () => { setQuote({ status: 'idle' }); resetPreparation(); } })} />
             {quote.status === 'checking' && <LoaderCircle className="spin" size={17} />}
             {quote.status === 'valid' && <Check size={17} />}
           </div>
           {form.formState.errors.quoteToken && <small className="field-error">{form.formState.errors.quoteToken.message}</small>}
         </label>
 
+        <div className="quote-shortcuts" aria-label="Quote shortcuts">
+          <button type="button" onClick={() => { form.setValue('quoteToken', '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', { shouldValidate: true }); setQuote({ status: 'idle' }); resetPreparation(); }}>WBNB</button>
+          <button type="button" onClick={() => { form.setValue('quoteToken', '0x55d398326f99059fF775485246999027B3197955', { shouldValidate: true }); setQuote({ status: 'idle' }); resetPreparation(); }}>USDT</button>
+          <button type="button" onClick={() => { form.setValue('quoteToken', '0x7130d2A12B9BCbFAd4f2634d864A1Ee1Ce3Ead9c', { shouldValidate: true }); setQuote({ status: 'idle' }); resetPreparation(); }}>BTCB</button>
+        </div>
+
         <div className="price-fee-grid">
           <label className="price-field">
-            <span>Starting price · quote per 1 token</span>
-            <input inputMode="decimal" aria-invalid={Boolean(form.formState.errors.startingPrice)} {...form.register('startingPrice', { onChange: resetPreparation })} />
+            <span><b className="copy-en">Starting price</b><b className="copy-zh">初始价格</b></span>
+            <input defaultValue="0.000001" inputMode="decimal" aria-invalid={Boolean(form.formState.errors.startingPrice)} {...form.register('startingPrice', { onChange: resetPreparation })} />
             {form.formState.errors.startingPrice && <small className="field-error">{form.formState.errors.startingPrice.message}</small>}
           </label>
           <label className="fee-field">
-            <span>Pool fee</span>
-            <select aria-invalid={Boolean(form.formState.errors.feeTier)} {...form.register('feeTier', { onChange: resetPreparation })}>
+            <span><b className="copy-en">Pool fee</b><b className="copy-zh">池手续费</b></span>
+            <select defaultValue={DEFAULT_FEE_TIER} aria-invalid={Boolean(form.formState.errors.feeTier)} {...form.register('feeTier', { onChange: resetPreparation })}>
               <option value="100">0.01%</option>
               <option value="500">0.05%</option>
               <option value="2500">0.25%</option>
@@ -293,23 +310,22 @@ export function LaunchDesk() {
         )}
 
         <div className="launch-summary">
-          <div><span>Supply</span><b>100,000,000</b></div>
+          <div><span>Supply</span><b>100M fixed</b></div>
           <div><span>Pool fee</span><b>{Number(selectedFeeTier) / 10_000}%</b></div>
-          <div><span>Creator fees</span><b>70%</b></div>
-          <div><span>LP position</span><b><ShieldCheck size={14} /> Permanent</b></div>
+          <div><span>Position</span><b><ShieldCheck size={14} /> Permanent</b></div>
         </div>
 
         <button
           className="launch-button"
           type={wrongNetwork ? 'button' : 'submit'}
-          disabled={isBusy || (prepared ? !factory : false)}
+          disabled={isBusy || (prepared ? !factory : false) || (quote.status === 'valid' && !factory)}
           onClick={wrongNetwork ? () => switchChain({ chainId: bsc.id }) : undefined}
         >
           {ctaLabel} <ArrowUpRight size={18} />
         </button>
       </form>
 
-      <p className="desk-note"><Check size={13} /> {factory ? 'Factory configured · simulation and exact receipt required' : 'Read-only prototype · factory not deployed'}</p>
+      <p className="desk-note"><span className="status-dot" /> {factory ? 'Factory configured · simulation and exact receipt required' : 'Factory not deployed · validation only'}</p>
     </div>
   );
 }
