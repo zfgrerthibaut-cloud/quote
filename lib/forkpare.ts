@@ -2,7 +2,14 @@ import { isAddress, parseUnits, type Address, type Hex } from 'viem';
 
 export const FIXED_SUPPLY = 100_000_000n * 10n ** 18n;
 export const DEFAULT_FEE_TIER = 500;
-export const DEFAULT_TICK_SPACING = 10;
+export const FEE_TICK_SPACING = {
+  100: 1,
+  500: 10,
+  2500: 50,
+  10000: 200,
+} as const;
+export type SupportedFeeTier = keyof typeof FEE_TICK_SPACING;
+export const DEFAULT_TICK_SPACING = FEE_TICK_SPACING[DEFAULT_FEE_TIER];
 const Q192 = 1n << 192n;
 const ONE_TOKEN = 10n ** 18n;
 const MIN_TICK = -887_272;

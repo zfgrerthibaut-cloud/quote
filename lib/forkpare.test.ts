@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { decodeEventLog, encodeAbiParameters, encodeEventTopics } from 'viem';
 
-import { buildPriceRange, forkPareFactoryAbi } from './forkpare.ts';
+import { buildPriceRange, FEE_TICK_SPACING, forkPareFactoryAbi } from './forkpare.ts';
 
 const Q96 = 1n << 96n;
 
@@ -26,6 +26,17 @@ test('accounts for quote decimals without floating point amount parsing', () => 
   assert.ok(token1.sqrtPriceX96 > Q96);
   assert.equal(Math.abs(token0.tickLower % 10), 0);
   assert.equal(Math.abs(token1.tickUpper % 10), 0);
+});
+
+test('aligns launch boundaries for every supported Pancake fee tier', () => {
+  for (const spacing of Object.values(FEE_TICK_SPACING)) {
+    const token0 = buildPriceRange('0.000001', 18, true, spacing);
+    const token1 = buildPriceRange('0.000001', 18, false, spacing);
+    assert.equal(Math.abs(token0.tickLower % spacing), 0);
+    assert.equal(Math.abs(token0.tickUpper % spacing), 0);
+    assert.equal(Math.abs(token1.tickLower % spacing), 0);
+    assert.equal(Math.abs(token1.tickUpper % spacing), 0);
+  }
 });
 
 test('rejects unsupported metadata decimals and zero price', () => {

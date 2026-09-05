@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowUpRight, Check, LoaderCircle, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { erc20Abi, formatEther, isAddress, keccak256, parseEventLogs, stringToHex, type Address, type Hash } from 'viem';
 import {
   useAccount,
@@ -21,8 +21,10 @@ import {
   buildPriceRange,
   configuredFactory,
   DEFAULT_FEE_TIER,
+  FEE_TICK_SPACING,
   FIXED_SUPPLY,
   forkPareFactoryAbi,
+  type SupportedFeeTier,
   type LaunchParams,
 } from '@/lib/forkpare';
 
@@ -31,6 +33,7 @@ const launchSchema = z.object({
   symbol: z.string().trim().min(1, 'Enter a ticker').max(12, '12 characters maximum').regex(/^[A-Za-z0-9]+$/, 'Letters and numbers only'),
   quoteToken: z.string().trim().refine(isAddress, 'Enter a valid BEP-20 address'),
   startingPrice: z.string().trim().regex(/^\d+(\.\d+)?$/, 'Enter a positive decimal price').refine((value) => Number(value) > 0, 'Price must be above zero'),
+  feeTier: z.coerce.number().refine((value) => value === 100 || value === 500 || value === 2500 || value === 10000, 'Choose a Pancake V3 fee tier'),
 });
 
 type LaunchForm = z.infer<typeof launchSchema>;
@@ -60,8 +63,10 @@ export function LaunchDesk() {
       symbol: 'FORK',
       quoteToken: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
       startingPrice: '0.000001',
+      feeTier: DEFAULT_FEE_TIER,
     },
   });
+  const selectedFeeTier = useWatch({ control: form.control, name: 'feeTier' });
 
   useEffect(() => {
     const selectQuote = (event: Event) => {
@@ -102,14 +107,20 @@ export function LaunchDesk() {
 
     for (let attempt = 0; attempt < 64; attempt += 1) {
       for (const launchTokenIsToken0 of [true, false]) {
-        const range = buildPriceRange(values.startingPrice, quoteDecimals, launchTokenIsToken0);
+        const feeTier = values.feeTier as SupportedFeeTier;
+        const range = buildPriceRange(
+          values.startingPrice,
+          quoteDecimals,
+          launchTokenIsToken0,
+          FEE_TICK_SPACING[feeTier],
+        );
         const userSalt = keccak256(stringToHex(`${address}:${values.name}:${values.symbol}:${attempt}`));
         const params: LaunchParams = {
           name: values.name.trim(),
           symbol: values.symbol.trim().toUpperCase(),
           supply: FIXED_SUPPLY,
           quoteToken,
-          feeTier: DEFAULT_FEE_TIER,
+          feeTier,
           sqrtPriceX96: range.sqrtPriceX96,
           tickLower: range.tickLower,
           tickUpper: range.tickUpper,
@@ -236,11 +247,23 @@ export function LaunchDesk() {
           {form.formState.errors.quoteToken && <small className="field-error">{form.formState.errors.quoteToken.message}</small>}
         </label>
 
-        <label className="price-field">
-          <span>Starting price · quote per 1 token</span>
-          <input inputMode="decimal" aria-invalid={Boolean(form.formState.errors.startingPrice)} {...form.register('startingPrice', { onChange: resetPreparation })} />
-          {form.formState.errors.startingPrice && <small className="field-error">{form.formState.errors.startingPrice.message}</small>}
-        </label>
+        <div className="price-fee-grid">
+          <label className="price-field">
+            <span>Starting price · quote per 1 token</span>
+            <input inputMode="decimal" aria-invalid={Boolean(form.formState.errors.startingPrice)} {...form.register('startingPrice', { onChange: resetPreparation })} />
+            {form.formState.errors.startingPrice && <small className="field-error">{form.formState.errors.startingPrice.message}</small>}
+          </label>
+          <label className="fee-field">
+            <span>Pool fee</span>
+            <select aria-invalid={Boolean(form.formState.errors.feeTier)} {...form.register('feeTier', { onChange: resetPreparation })}>
+              <option value="100">0.01%</option>
+              <option value="500">0.05%</option>
+              <option value="2500">0.25%</option>
+              <option value="10000">1.00%</option>
+            </select>
+            {form.formState.errors.feeTier && <small className="field-error">{form.formState.errors.feeTier.message}</small>}
+          </label>
+        </div>
 
         <AnimatePresence initial={false}>
           {quote.status !== 'idle' && quote.status !== 'checking' && (
@@ -251,7 +274,7 @@ export function LaunchDesk() {
           )}
         </AnimatePresence>
 
-        {prepared && <div className="prepared-launch"><span>Predicted token</span><b>{prepared.predictedToken}</b><span>Range</span><b>{prepared.params.tickLower} → {prepared.params.tickUpper}</b></div>}
+        {prepared && <div className="prepared-launch"><span>Predicted token</span><b>{prepared.predictedToken}</b><span>Range</span><b>{prepared.params.tickLower} → {prepared.params.tickUpper}</b><span>Pool fee</span><b>{prepared.params.feeTier / 10_000}%</b></div>}
         {(prepareError || writeError) && <p className="transaction-error" role="alert"><TriangleAlert size={14} /> {prepareError || writeError?.message}</p>}
         {receipt.isSuccess && (
           <div className="transaction-success" role="status">
@@ -271,6 +294,7 @@ export function LaunchDesk() {
 
         <div className="launch-summary">
           <div><span>Supply</span><b>100,000,000</b></div>
+          <div><span>Pool fee</span><b>{Number(selectedFeeTier) / 10_000}%</b></div>
           <div><span>Creator fees</span><b>70%</b></div>
           <div><span>LP position</span><b><ShieldCheck size={14} /> Permanent</b></div>
         </div>
