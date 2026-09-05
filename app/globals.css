@@ -78,7 +78,7 @@ html[data-locale='zh'] body { font-family: var(--font-noto-sc), var(--font-instr
 .denominator-base strong { font: 560 clamp(15px, 1.5vw, 23px) var(--font-instrument); letter-spacing: -.02em; }
 .denominator-slash { color: var(--blue); font: 300 58px/.8 var(--font-instrument); text-align: center; transform: rotate(10deg); }
 .denominator-quotes > div { display: flex; height: 26px; overflow: hidden; flex-direction: column; }
-.denominator-quotes b { min-height: 26px; color: var(--jade); font: 560 clamp(15px, 1.5vw, 23px)/26px var(--font-instrument); animation: quote-roll 8s cubic-bezier(.78,0,.2,1) infinite; }
+.denominator-quotes b { min-height: 26px; color: var(--jade); font: 560 clamp(15px, 1.5vw, 23px)/26px var(--font-instrument); animation: quote-roll 10s cubic-bezier(.78,0,.2,1) infinite; }
 .quote-actions { bottom: 10%; }
 .quote-index { position: absolute; z-index: 4; right: clamp(24px, 4vw, 64px); bottom: 8%; display: flex; align-items: center; gap: 10px; color: var(--muted); font: 500 8px var(--font-plex-mono); letter-spacing: .15em; writing-mode: vertical-rl; }
 .quote-index i { width: 1px; height: 44px; background: linear-gradient(var(--text), var(--blue)); }
@@ -334,10 +334,11 @@ footer { min-height: 68px; padding: 0 clamp(20px, 4vw, 64px); display: flex; ali
 }
 
 @keyframes quote-roll {
-  0%, 18% { transform: translateY(0); }
-  25%, 43% { transform: translateY(-26px); }
-  50%, 68% { transform: translateY(-52px); }
-  75%, 93% { transform: translateY(-78px); }
+  0%, 14% { transform: translateY(0); }
+  20%, 34% { transform: translateY(-26px); }
+  40%, 54% { transform: translateY(-52px); }
+  60%, 74% { transform: translateY(-78px); }
+  80%, 94% { transform: translateY(-104px); }
   100% { transform: translateY(0); }
 }
 

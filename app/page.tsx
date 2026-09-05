@@ -24,7 +24,7 @@ export default function Home() {
           <span className="denominator-slash">/</span>
           <div className="denominator-quotes">
             <small>QUOTE</small>
-            <div><b>WBNB</b><b>USDT</b><b>BTCB</b><b>ANY BEP-20</b></div>
+            <div><b>WBNB</b><b>USDT</b><b>CAKE</b><b>MARSCOIN</b><b>ANY BEP-20</b></div>
           </div>
         </div>
 
