@@ -1,17 +1,21 @@
 'use client';
 
-import { Activity, ArrowDownUp, ArrowRight, Clock3, ExternalLink, Radio, WifiOff } from 'lucide-react';
+import { Activity, ArrowDownUp, ArrowRight, Clock3, ExternalLink, Radio, Search, WifiOff } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 const QUOTE_API_URL = (process.env.NEXT_PUBLIC_QUOTE_API_URL ?? '').replace(/\/+$/, '');
-const SNAPSHOT_PATH = '/v1/markets?sort=market_cap&limit=50';
+const QUOTE_WS_URL = (process.env.NEXT_PUBLIC_QUOTE_WS_URL ?? '').replace(/\/+$/, '');
 const STREAM_PATH = '/v1/stream?channel=markets';
+const WEBSOCKET_PATH = '/v1/ws';
+const PAGE_SIZE = 30;
 
 type SortMode = 'market_cap' | 'newest' | 'volume_24h';
-type FilterMode = 'all' | 'direct' | 'curve' | 'reward';
+type EngineFilter = 'all' | 'direct' | 'curve';
 type ConnectionState = 'offline' | 'loading' | 'connecting' | 'live' | 'reconnecting' | 'error';
+type StreamTransport = 'websocket' | 'sse';
 type MarketEngine = 'direct' | 'curve';
 
 type MarketRecord = {
@@ -48,11 +52,10 @@ const sortOptions: Array<{ value: SortMode; label: string; zh: string }> = [
   { value: 'volume_24h', label: '24h volume', zh: '24小时成交量' },
 ];
 
-const filterOptions: Array<{ value: FilterMode; label: string; zh: string }> = [
+const filterOptions: Array<{ value: EngineFilter; label: string; zh: string }> = [
   { value: 'all', label: 'All', zh: '全部' },
   { value: 'direct', label: 'Direct', zh: '直开' },
   { value: 'curve', label: 'Curve', zh: '曲线' },
-  { value: 'reward', label: 'Reward', zh: '奖励' },
 ];
 
 const usdCompact = new Intl.NumberFormat('en-US', {
@@ -147,6 +150,16 @@ function buildUrl(path: string) {
   return `${QUOTE_API_URL}${path}`;
 }
 
+function buildWebSocketUrl(after?: string) {
+  const url = QUOTE_WS_URL
+    ? new URL(QUOTE_WS_URL)
+    : new URL(buildUrl(WEBSOCKET_PATH));
+  if (!QUOTE_WS_URL) url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.searchParams.set('channel', 'markets');
+  if (after) url.searchParams.set('after', after);
+  return url.toString();
+}
+
 function extractMarkets(payload: unknown): unknown[] {
   if (Array.isArray(payload)) return payload;
   if (!isRecord(payload)) return [];
@@ -156,7 +169,7 @@ function extractMarkets(payload: unknown): unknown[] {
     if (Array.isArray(value)) return value;
   }
 
-  for (const key of ['market', 'payload', 'record']) {
+  for (const key of ['market', 'payload', 'record', 'data']) {
     const value = payload[key];
     const nested = extractMarkets(value);
     if (nested.length > 0) return nested;
@@ -288,9 +301,23 @@ function normalizeMarket(record: unknown, eventId?: string): MarketRecord | unde
 function mergeMarkets(current: MarketRecord[], incoming: MarketRecord[]) {
   const byKey = new Map(current.map((market) => [market.key, market]));
   for (const market of incoming) {
-    byKey.set(market.key, { ...byKey.get(market.key), ...market });
+    const previous = byKey.get(market.key);
+    if (previous && marketIsOlder(previous, market)) continue;
+    byKey.set(market.key, { ...previous, ...market });
   }
   return Array.from(byKey.values());
+}
+
+function marketIsOlder(previous: MarketRecord, incoming: MarketRecord) {
+  if (previous.eventId && incoming.eventId && /^\d+$/.test(previous.eventId) && /^\d+$/.test(incoming.eventId)) {
+    return BigInt(incoming.eventId) < BigInt(previous.eventId);
+  }
+  if (previous.blockNumber !== undefined && incoming.blockNumber !== undefined) {
+    if (incoming.blockNumber !== previous.blockNumber) return incoming.blockNumber < previous.blockNumber;
+    if (previous.logIndex !== undefined && incoming.logIndex !== undefined) return incoming.logIndex < previous.logIndex;
+  }
+  if (previous.updatedAtMs !== undefined && incoming.updatedAtMs !== undefined) return incoming.updatedAtMs < previous.updatedAtMs;
+  return false;
 }
 
 function removeMarkets(current: MarketRecord[], payload: unknown) {
@@ -320,6 +347,10 @@ function snapshotEventId(payload: unknown) {
 
 function snapshotTimestamp(payload: unknown) {
   return firstTimestamp(payload, ['snapshotAt', 'snapshot_at', 'generatedAt', 'generated_at', 'indexedAt', 'indexed_at']);
+}
+
+function snapshotNextCursor(payload: unknown) {
+  return firstText(payload, ['meta.nextCursor', 'meta.next_cursor', 'nextCursor', 'next_cursor', 'cursor.next']);
 }
 
 function displayPair(market: MarketRecord) {
@@ -357,10 +388,32 @@ function formatLatency(value?: number) {
   return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(2)} s`;
 }
 
-function marketMatchesFilter(market: MarketRecord, filter: FilterMode) {
-  if (filter === 'all') return true;
-  if (filter === 'reward') return market.reward === true;
-  return market.engine === filter;
+function marketMatchesFilter(market: MarketRecord, engine: EngineFilter, rewardOnly: boolean) {
+  if (rewardOnly && market.reward !== true) return false;
+  return engine === 'all' || market.engine === engine;
+}
+
+function marketMatchesSearch(market: MarketRecord, query: string) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return [
+    market.id,
+    market.marketAddress,
+    market.tokenAddress,
+    market.quoteAddress,
+    market.tokenName,
+    market.tokenSymbol,
+    market.quoteSymbol,
+  ].some((value) => value?.toLowerCase().includes(needle));
+}
+
+function snapshotPath(sort: SortMode, engine: EngineFilter, rewardOnly: boolean, query: string, cursor?: string) {
+  const params = new URLSearchParams({ limit: String(PAGE_SIZE), sort });
+  if (engine !== 'all') params.set('engine', engine);
+  if (rewardOnly) params.set('reward', 'true');
+  if (query.trim()) params.set('q', query.trim());
+  if (cursor) params.set('cursor', cursor);
+  return `/v1/markets?${params.toString()}`;
 }
 
 function compareMarkets(sort: SortMode) {
@@ -371,11 +424,11 @@ function compareMarkets(sort: SortMode) {
   };
 }
 
-function connectionText(status: ConnectionState) {
+function connectionText(status: ConnectionState, transport: StreamTransport | null) {
   if (status === 'offline') return 'Indexer offline';
   if (status === 'loading') return 'Loading snapshot';
   if (status === 'connecting') return 'Opening stream';
-  if (status === 'live') return 'Live stream';
+  if (status === 'live') return transport === 'websocket' ? 'Live WebSocket' : 'Live fallback';
   if (status === 'reconnecting') return 'Reconnecting';
   return 'Indexer error';
 }
@@ -385,27 +438,152 @@ function parseJson(data: string): unknown {
   return JSON.parse(data) as unknown;
 }
 
+function TokenSeal({ market }: { market: MarketRecord }) {
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  const address = market.tokenAddress;
+  const source = address && /^0x[a-fA-F0-9]{40}$/.test(address)
+    ? `/api/token-image/${address.toLowerCase()}`
+    : null;
+
+  return (
+    <span className="seal" aria-hidden="true">
+      {source && failedSource !== source
+        ? <Image alt="" fill onError={() => setFailedSource(source)} src={source} unoptimized />
+        : (market.tokenSymbol || '#').slice(0, 2).toUpperCase()}
+    </span>
+  );
+}
+
 export function RealtimeMarketFeed() {
   const [markets, setMarkets] = useState<MarketRecord[]>([]);
   const [sort, setSort] = useState<SortMode>('market_cap');
-  const [filter, setFilter] = useState<FilterMode>('all');
+  const [engineFilter, setEngineFilter] = useState<EngineFilter>('all');
+  const [rewardOnly, setRewardOnly] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [status, setStatus] = useState<ConnectionState>(QUOTE_API_URL ? 'loading' : 'offline');
   const [error, setError] = useState<string | null>(null);
   const [lastEventId, setLastEventId] = useState<string | null>(null);
   const [snapshotAt, setSnapshotAt] = useState<number | null>(null);
+  const [transport, setTransport] = useState<StreamTransport | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [paramsReady, setParamsReady] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedSort = params.get('sort');
+    const requestedEngine = params.get('engine');
+    const requestedSearch = params.get('q')?.trim() || '';
+    queueMicrotask(() => {
+      if (requestedSort === 'market_cap' || requestedSort === 'newest' || requestedSort === 'volume_24h') setSort(requestedSort);
+      if (requestedEngine === 'direct' || requestedEngine === 'curve') setEngineFilter(requestedEngine);
+      setRewardOnly(params.get('reward') === '1' || params.get('reward') === 'true');
+      setSearchInput(requestedSearch);
+      setSearchQuery(requestedSearch);
+      setParamsReady(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchQuery(searchInput.trim()), 200);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
 
   useEffect(() => {
     if (!QUOTE_API_URL) return;
 
     const controller = new AbortController();
-    let stream: EventSource | null = null;
+    let socket: WebSocket | null = null;
+    let fallback: EventSource | null = null;
+    let stopped = false;
+    let resumeAfter: string | undefined;
+
+    const applyEvent = (payload: unknown, eventType = 'message', explicitEventId?: string) => {
+      const nextEventId = explicitEventId || eventIdFromPayload(payload);
+      if (nextEventId) {
+        resumeAfter = nextEventId;
+        setLastEventId(nextEventId);
+      }
+
+      if (isDeleteEvent(payload, eventType)) {
+        setMarkets((current) => removeMarkets(current, payload));
+        return;
+      }
+
+      const incoming = extractMarkets(payload)
+        .map((market) => normalizeMarket(market, nextEventId))
+        .filter((market): market is MarketRecord => Boolean(market));
+      if (incoming.length > 0) setMarkets((current) => mergeMarkets(current, incoming));
+    };
+
+    const openSseFallback = () => {
+      if (stopped || fallback) return;
+      socket?.close();
+      socket = null;
+      const streamUrl = new URL(buildUrl(STREAM_PATH));
+      if (resumeAfter) streamUrl.searchParams.set('after', resumeAfter);
+      fallback = new EventSource(streamUrl.toString());
+      fallback.onopen = () => {
+        setTransport('sse');
+        setStatus('live');
+        setError(null);
+      };
+      fallback.onmessage = (event) => {
+        try {
+          applyEvent(parseJson(event.data), event.type, event.lastEventId);
+          setStatus('live');
+          setError(null);
+        } catch {
+          setError('A live update could not be decoded.');
+        }
+      };
+      for (const eventName of ['market', 'markets', 'upsert', 'delete', 'market.launched', 'market.updated', 'market.deleted', 'trade.executed', 'market.graduated', 'chain.reorg']) {
+        fallback.addEventListener(eventName, fallback.onmessage as EventListener);
+      }
+      fallback.onerror = () => setStatus('reconnecting');
+    };
+
+    const openWebSocket = () => {
+      if (stopped) return;
+      setStatus('connecting');
+      let opened = false;
+      socket = new WebSocket(buildWebSocketUrl(resumeAfter));
+      socket.onopen = () => {
+        opened = true;
+        setTransport('websocket');
+        setStatus('live');
+        setError(null);
+        socket?.send(JSON.stringify({ type: 'subscribe', channel: 'markets', after: resumeAfter }));
+      };
+      socket.onmessage = (event) => {
+        try {
+          const payload = parseJson(typeof event.data === 'string' ? event.data : '');
+          const eventType = firstText(payload, ['type', 'event', 'topic']) || 'message';
+          applyEvent(payload, eventType);
+          setStatus('live');
+          setError(null);
+        } catch {
+          setError('A live update could not be decoded.');
+        }
+      };
+      socket.onerror = () => {
+        if (!opened) setError('WebSocket unavailable; using the live fallback.');
+      };
+      socket.onclose = () => {
+        if (!stopped) {
+          setStatus('reconnecting');
+          openSseFallback();
+        }
+      };
+    };
 
     async function startFeed() {
       setStatus('loading');
       setError(null);
 
       try {
-        const response = await fetch(buildUrl(SNAPSHOT_PATH), { cache: 'no-store', signal: controller.signal });
+        const response = await fetch(buildUrl(snapshotPath('market_cap', 'all', false, '')), { cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error(`snapshot_${response.status}`);
 
         const payload = (await response.json()) as unknown;
@@ -417,74 +595,94 @@ export function RealtimeMarketFeed() {
 
         setMarkets(mergeMarkets([], snapshotMarkets));
         setLastEventId(eventId ?? null);
+        resumeAfter = eventId;
         setSnapshotAt(snapshotTime ?? Date.now());
-        setStatus('connecting');
+        setNextCursor(snapshotNextCursor(payload) ?? null);
       } catch (snapshotError) {
         if (controller.signal.aborted) return;
         setError(snapshotError instanceof Error ? 'Market data is temporarily unavailable.' : 'Market data is temporarily unavailable.');
-        setStatus('connecting');
       }
 
       if (controller.signal.aborted) return;
-
-      const streamUrl = new URL(buildUrl(STREAM_PATH));
-      if (eventId) streamUrl.searchParams.set('after', eventId);
-      stream = new EventSource(streamUrl.toString());
-      stream.onopen = () => {
-        setStatus('live');
-        setError(null);
-      };
-
-      const handleMessage = (event: MessageEvent<string>) => {
-        try {
-          const payload = parseJson(event.data);
-          const eventId = event.lastEventId || eventIdFromPayload(payload);
-          if (eventId) setLastEventId(eventId);
-
-          if (isDeleteEvent(payload, event.type)) {
-            setMarkets((current) => removeMarkets(current, payload));
-            setStatus('live');
-            return;
-          }
-
-          const incoming = extractMarkets(payload)
-            .map((market) => normalizeMarket(market, eventId))
-            .filter((market): market is MarketRecord => Boolean(market));
-
-          if (incoming.length > 0) {
-            setMarkets((current) => mergeMarkets(current, incoming));
-          }
-          setStatus('live');
-          setError(null);
-        } catch (streamError) {
-          setError(streamError instanceof Error ? streamError.message : 'stream_parse_error');
-        }
-      };
-
-      stream.addEventListener('message', handleMessage);
-      stream.addEventListener('market', handleMessage);
-      stream.addEventListener('markets', handleMessage);
-      stream.addEventListener('upsert', handleMessage);
-      stream.addEventListener('delete', handleMessage);
-      stream.addEventListener('market.launched', handleMessage);
-      stream.addEventListener('market.updated', handleMessage);
-      stream.addEventListener('market.deleted', handleMessage);
-      stream.onerror = () => {
-        setStatus((current) => (current === 'offline' ? current : 'reconnecting'));
-      };
+      openWebSocket();
     }
 
     void startFeed();
 
     return () => {
       controller.abort();
-      stream?.close();
+      stopped = true;
+      socket?.close();
+      fallback?.close();
     };
   }, []);
 
+  useEffect(() => {
+    if (!QUOTE_API_URL || !paramsReady) return;
+
+    const controller = new AbortController();
+    async function refreshView() {
+      try {
+        const response = await fetch(buildUrl(snapshotPath(sort, engineFilter, rewardOnly, searchQuery)), {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`snapshot_${response.status}`);
+        const payload = (await response.json()) as unknown;
+        const eventId = snapshotEventId(payload);
+        const incoming = extractMarkets(payload)
+          .map((market) => normalizeMarket(market, eventId))
+          .filter((market): market is MarketRecord => Boolean(market));
+        setMarkets(incoming);
+        setNextCursor(snapshotNextCursor(payload) ?? null);
+        setSnapshotAt(snapshotTimestamp(payload) ?? Date.now());
+        setError(null);
+      } catch {
+        if (!controller.signal.aborted) setError('This market view could not be refreshed.');
+      }
+    }
+    void refreshView();
+    return () => controller.abort();
+  }, [engineFilter, paramsReady, rewardOnly, searchQuery, sort]);
+
+  useEffect(() => {
+    if (!paramsReady) return;
+    const params = new URLSearchParams();
+    if (searchQuery) params.set('q', searchQuery);
+    if (engineFilter !== 'all') params.set('engine', engineFilter);
+    if (rewardOnly) params.set('reward', '1');
+    if (sort !== 'market_cap') params.set('sort', sort);
+    const query = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+  }, [engineFilter, paramsReady, rewardOnly, searchQuery, sort]);
+
+  async function loadMore() {
+    if (!QUOTE_API_URL || !nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const response = await fetch(buildUrl(snapshotPath(sort, engineFilter, rewardOnly, searchQuery, nextCursor)), { cache: 'no-store' });
+      if (!response.ok) throw new Error(`snapshot_${response.status}`);
+      const payload = (await response.json()) as unknown;
+      const eventId = snapshotEventId(payload);
+      const incoming = extractMarkets(payload)
+        .map((market) => normalizeMarket(market, eventId))
+        .filter((market): market is MarketRecord => Boolean(market));
+      setMarkets((current) => mergeMarkets(current, incoming));
+      setNextCursor(snapshotNextCursor(payload) ?? null);
+      setError(null);
+    } catch {
+      setError('More markets could not be loaded.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   const filteredMarkets = useMemo(
-    () => markets.filter((market) => marketMatchesFilter(market, filter)).sort(compareMarkets(sort)),
-    [filter, markets, sort],
+    () => markets
+      .filter((market) => marketMatchesFilter(market, engineFilter, rewardOnly))
+      .filter((market) => marketMatchesSearch(market, searchQuery))
+      .sort(compareMarkets(sort)),
+    [engineFilter, markets, rewardOnly, searchQuery, sort],
   );
 
   const counts = useMemo(
@@ -523,7 +721,7 @@ export function RealtimeMarketFeed() {
         <aside className="feed-rail" aria-label="Feed status">
           <div className={`connection ${status}`}>
             {status === 'offline' ? <WifiOff size={17} /> : <Radio size={17} />}
-            <span role="status" aria-live="polite">{connectionText(status)}</span>
+            <span role="status" aria-live="polite">{connectionText(status, transport)}</span>
           </div>
           <div className="rail-metric">
             <small>MARKETS</small>
@@ -541,14 +739,24 @@ export function RealtimeMarketFeed() {
         </aside>
 
         <div className="feed-panel">
+          <label className="feed-search">
+            <Search size={15} />
+            <input
+              aria-label="Search markets"
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Search name, ticker, token or market address"
+              spellCheck={false}
+              value={searchInput}
+            />
+          </label>
           <div className="feed-controls">
             <div className="control-group" role="group" aria-label="Filter markets">
               {filterOptions.map((option) => (
                 <button
-                  aria-pressed={filter === option.value}
-                  className={filter === option.value ? 'active' : ''}
+                  aria-pressed={engineFilter === option.value}
+                  className={engineFilter === option.value ? 'active' : ''}
                   key={option.value}
-                  onClick={() => setFilter(option.value)}
+                  onClick={() => setEngineFilter(option.value)}
                   type="button"
                 >
                   <span className="copy-en">{option.label}</span>
@@ -556,6 +764,11 @@ export function RealtimeMarketFeed() {
                   <small>{counts[option.value]}</small>
                 </button>
               ))}
+              <button aria-pressed={rewardOnly} className={rewardOnly ? 'active' : ''} onClick={() => setRewardOnly((current) => !current)} type="button">
+                <span className="copy-en">Reward</span>
+                <span className="copy-zh">奖励</span>
+                <small>{counts.reward}</small>
+              </button>
             </div>
             <div className="control-group sort" role="group" aria-label="Sort markets">
               {sortOptions.map((option) => (
@@ -596,7 +809,7 @@ export function RealtimeMarketFeed() {
                   transition={{ damping: 34, stiffness: 420, type: 'spring' }}
                 >
                   <div className="market-cell pair" role="cell">
-                    <span className="seal" aria-hidden="true">{(market.tokenSymbol || '#').slice(0, 2).toUpperCase()}</span>
+                    <TokenSeal market={market} />
                     <div>
                       <b>{displayPair(market)}</b>
                       <small>{market.tokenName || shortId(market.marketAddress || market.tokenAddress || market.id)}</small>
@@ -640,6 +853,11 @@ export function RealtimeMarketFeed() {
                   <p>{emptyCopy}</p>
                 </div>
               </div>
+            ) : null}
+            {nextCursor && filteredMarkets.length > 0 ? (
+              <button className="load-more" disabled={loadingMore} onClick={() => void loadMore()} type="button">
+                {loadingMore ? 'Loading…' : 'Load more markets'}
+              </button>
             ) : null}
           </div>
         </div>
@@ -766,6 +984,30 @@ export function RealtimeMarketFeed() {
 
         .realtime-feed .feed-panel {
           min-width: 0;
+        }
+
+        .realtime-feed .feed-search {
+          min-height: 54px;
+          padding: 0 16px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          border-bottom: 1px solid var(--line);
+          color: var(--acid);
+        }
+
+        .realtime-feed .feed-search input {
+          width: 100%;
+          min-width: 0;
+          border: 0;
+          outline: 0;
+          background: transparent;
+          color: var(--bone);
+          font: 500 12px var(--font-plex-mono);
+        }
+
+        .realtime-feed .feed-search input::placeholder {
+          color: var(--muted);
         }
 
         .realtime-feed .feed-controls {
@@ -951,6 +1193,29 @@ export function RealtimeMarketFeed() {
           margin: 8px 0 0;
           font-size: 13px;
           line-height: 1.5;
+        }
+
+        .realtime-feed .load-more {
+          width: calc(100% - 28px);
+          min-height: 42px;
+          margin: 14px;
+          border: 1px solid var(--line-strong);
+          background: var(--surface);
+          color: var(--bone);
+          cursor: pointer;
+          font: 650 9px var(--font-plex-mono);
+          letter-spacing: .08em;
+          text-transform: uppercase;
+        }
+
+        .realtime-feed .load-more:hover:not(:disabled) {
+          border-color: var(--acid);
+          color: var(--acid);
+        }
+
+        .realtime-feed .load-more:disabled {
+          cursor: wait;
+          opacity: .55;
         }
 
         @media (max-width: 980px) {
