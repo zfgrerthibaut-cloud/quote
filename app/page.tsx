@@ -1,5 +1,4 @@
 import { ArrowRight } from 'lucide-react';
-import Link from 'next/link';
 import { QuoteSwitchboard } from '@/components/quote-switchboard';
 
 export default function Home() {
@@ -17,14 +16,14 @@ export default function Home() {
         <QuoteSwitchboard />
 
         <div className="home-actions quote-actions">
-          <Link className="home-action primary" href="/launch">
+          <a className="home-action primary" href="/launch">
             <span><b className="copy-en">Launch token</b><b className="copy-zh">创建代币</b><small>01</small></span>
             <ArrowRight size={18} />
-          </Link>
-          <Link className="home-action" href="/explore">
+          </a>
+          <a className="home-action" href="/explore">
             <span><b className="copy-en">Explore markets</b><b className="copy-zh">浏览市场</b><small>02</small></span>
             <ArrowRight size={18} />
-          </Link>
+          </a>
         </div>
         <div className="stage-glyphs" aria-hidden="true"><span>+</span><i /><span>⌁</span><b>05</b></div>
       </section>

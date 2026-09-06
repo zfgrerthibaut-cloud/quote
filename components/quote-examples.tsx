@@ -2,7 +2,6 @@
 
 import { ArrowRight, ExternalLink, RefreshCw } from 'lucide-react';
 import Image from 'next/image';
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { Address } from 'viem';
 
@@ -128,7 +127,7 @@ export function QuoteExamples() {
           <h2 className="copy-en">BSC quote assets</h2>
           <h2 className="copy-zh">BSC 计价资产</h2>
         </div>
-        <Link className="index-launch-link" href="/launch"><span className="copy-en">Launch a market</span><span className="copy-zh">创建市场</span><ArrowRight size={15} /></Link>
+        <a className="index-launch-link" href="/launch"><span className="copy-en">Launch a market</span><span className="copy-zh">创建市场</span><ArrowRight size={15} /></a>
       </header>
 
       <div className="market-grid">
@@ -210,7 +209,7 @@ export function QuoteExamples() {
                 <small>{data?.found ? `${formatUsd(pair?.liquidityUsd)} liq / 24H ${formatUsd(pair?.volume24hUsd)} / ${formatChange(pair?.priceChange24h)}` : status}</small>
               </div>
               <a href={`https://bscscan.com/token/${quote.address}`} target="_blank" rel="noreferrer" aria-label={`Inspect ${quote.symbol} on BscScan`}><ExternalLink size={14} /></a>
-              <Link href={`/launch?quote=${quote.address}`} aria-label={`Use ${quote.symbol} as quote`}><ArrowRight size={15} /></Link>
+              <a href={`/launch?quote=${quote.address}`} aria-label={`Use ${quote.symbol} as quote`}><ArrowRight size={15} /></a>
             </div>
             );
           })}

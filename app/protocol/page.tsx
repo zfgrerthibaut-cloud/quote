@@ -11,21 +11,21 @@ export default function ProtocolPage() {
       </section>
       <section className="protocol-section standalone">
         <div className="protocol-copy">
-          <span className="section-label">Two launch paths</span>
-          <h2 className="copy-en">Direct now.<br />Curve first.</h2>
+          <span className="section-label">Direct V3 launch</span>
+          <h2 className="copy-en">Launch into<br />liquidity.</h2>
           <h2 className="copy-zh">流动性头寸即为市场。</h2>
-          <p className="copy-en">Every launch binds its engine, quote asset and fee configuration. The final market is indexed from the onchain receipt.</p>
+          <p className="copy-en">Every token opens directly on PancakeSwap V3. The quote asset, initial price, LP range and fee modules are verified before the launch is signed.</p>
           <p className="copy-zh">签名前从合约状态读取最终配置，并在交易回执中再次确认。</p>
         </div>
         <div className="curve-shell">
-          <div className="curve-head"><span>BONDING PATH / ILLUSTRATIVE</span><span>QUOTE / TOKEN</span></div>
+          <div className="curve-head"><span>PANCAKESWAP V3 / INITIAL PRICE</span><span>QUOTE / TOKEN</span></div>
           <LaunchCurve />
         </div>
         <dl className="protocol-facts">
           <div><dt>01</dt><dd><b>Any eligible quote</b><span>At least $10k verifiable liquidity against BNB or stablecoin.</span></dd></div>
-          <div><dt>02</dt><dd><b>Direct or curve</b><span>Open the market immediately or graduate after price discovery.</span></dd></div>
+          <div><dt>02</dt><dd><b>$7k initial FDV</b><span>The target price is converted into exact quote-token units before pool initialization.</span></dd></div>
           <div><dt>03</dt><dd><b>Standard or Reward</b><span>Simple fixed supply or optional holder rewards from trading fees.</span></dd></div>
-          <div><dt>04</dt><dd><b>Exact receipt</b><span>Engine, token, quote, pool and modules resolved from logs.</span></dd></div>
+          <div><dt>04</dt><dd><b>Exact receipt</b><span>Token, quote, pool, initialized price and LP range resolved from logs.</span></dd></div>
         </dl>
       </section>
     </main>

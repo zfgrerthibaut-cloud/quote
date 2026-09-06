@@ -13,16 +13,16 @@ const notoSansSc = Noto_Sans_SC({ variable: '--font-noto-sc', subsets: ['latin']
 export const metadata: Metadata = {
   metadataBase: new URL('https://forkpare-bsc.momokhitam201.chatgpt.site'),
   title: 'QUOTE',
-  description: 'Create a token against any eligible BEP-20. Direct market or bonding curve on BNB Chain.',
+  description: 'Create a token against any eligible BEP-20 and launch directly on PancakeSwap V3.',
   openGraph: {
     title: 'QUOTE',
-    description: 'Any eligible token can be the quote. Direct or bonding-curve markets on BNB Chain.',
+    description: 'Any eligible token can be the quote. Direct PancakeSwap V3 launches on BNB Chain.',
     images: [{ url: '/og.png', width: 1200, height: 630, alt: 'QUOTE — BNB Chain token launchpad' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'QUOTE',
-    description: 'Any eligible token can be the quote. Direct or bonding-curve markets on BNB Chain.',
+    description: 'Any eligible token can be the quote. Direct PancakeSwap V3 launches on BNB Chain.',
     images: ['/og.png'],
   },
 };

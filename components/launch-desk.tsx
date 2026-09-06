@@ -15,7 +15,6 @@ const quoteAssets = [
 
 const PLATFORM_FEE_BPS = 25;
 
-type Engine = 'Direct' | 'Curve';
 type TokenMode = 'Standard' | 'Reward';
 type QuoteStatus = { state: 'idle' | 'loading' | 'valid' | 'invalid'; symbol?: string; decimals?: number; note?: string };
 
@@ -23,7 +22,7 @@ function Choice<T extends string>({ value, current, onSelect, label, note }: { v
   const active = value === current;
   return (
     <button className={`choice-card ${active ? 'active' : ''}`} type="button" onClick={() => onSelect(value)} aria-pressed={active}>
-      {active && <motion.i layoutId={`choice-${label.includes('Direct') || label.includes('Curve') ? 'engine' : 'mode'}`} transition={{ type: 'spring', stiffness: 430, damping: 36 }} />}
+      {active && <motion.i layoutId="choice-mode" transition={{ type: 'spring', stiffness: 430, damping: 36 }} />}
       <span>{label}</span><small>{note}</small>
     </button>
   );
@@ -49,7 +48,6 @@ export function LaunchDesk() {
   const publicClient = usePublicClient();
   const [name, setName] = useState('');
   const [symbol, setSymbol] = useState('');
-  const [engine, setEngine] = useState<Engine>('Direct');
   const [mode, setMode] = useState<TokenMode>('Standard');
   const [quoteAddress, setQuoteAddress] = useState<string>(quoteAssets[0].address);
   const [quote, setQuote] = useState<QuoteStatus>({ state: 'idle', symbol: 'MARSCOIN' });
@@ -102,7 +100,8 @@ export function LaunchDesk() {
   }, [publicClient, quoteAddress]);
 
   const receiptRows = useMemo(() => [
-    ['Engine', engine],
+    ['Market', 'Pancake V3'],
+    ['Initial FDV', '$7,000 target'],
     ['Token', mode],
     ['Supply', '100,000,000'],
     ['Quote', quote.symbol || '—'],
@@ -113,7 +112,7 @@ export function LaunchDesk() {
     ['Reward fee', mode === 'Reward' ? `${(rewardFee / 100).toFixed(2)}%` : '—'],
     ['Creator fee split', `${(creatorLpShare / 100).toFixed(0)}%`],
     ['Hook total', `${(totalTax / 100).toFixed(2)}%`],
-  ], [creatorFee, creatorLpShare, devBuy, devBuyBnb, engine, mode, quote.symbol, rewardFee, totalTax]);
+  ], [creatorFee, creatorLpShare, devBuy, devBuyBnb, mode, quote.symbol, rewardFee, totalTax]);
 
   function selectQuote(asset: typeof quoteAssets[number]) {
     setQuoteAddress(asset.address);
@@ -164,10 +163,10 @@ export function LaunchDesk() {
         </section>
 
         <section className="form-section">
-          <div className="section-number"><span>02</span><div><b>Market path</b><small className="copy-en">How price discovery begins</small><small className="copy-zh">选择发行路径</small></div></div>
-          <div className="choice-grid">
-            <Choice value="Direct" current={engine} onSelect={(next) => { setEngine(next); setReviewed(false); }} label="Direct market" note="Liquidity opens immediately" />
-            <Choice value="Curve" current={engine} onSelect={(next) => { setEngine(next); setReviewed(false); }} label="Bonding curve" note="Graduates after the target" />
+          <div className="section-number"><span>02</span><div><b>Market</b><small className="copy-en">Direct liquidity from block one</small><small className="copy-zh">首区块直接开放流动性</small></div></div>
+          <div className="fixed-market-path">
+            <div><b>PancakeSwap V3</b><small>Permanent LP position</small></div>
+            <span><b>$7,000</b><small>INITIAL FDV TARGET</small></span>
           </div>
           <div className="choice-grid">
             <Choice value="Standard" current={mode} onSelect={(next) => { setMode(next); setReviewed(false); }} label="Standard token" note="Simple fixed supply" />

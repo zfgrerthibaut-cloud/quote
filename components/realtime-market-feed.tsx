@@ -3,7 +3,6 @@
 import { Activity, ArrowDownUp, ArrowRight, Clock3, ExternalLink, Radio, Search, WifiOff } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import Image from 'next/image';
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 const QUOTE_API_URL = (process.env.NEXT_PUBLIC_QUOTE_API_URL ?? '').replace(/\/+$/, '');
@@ -13,7 +12,7 @@ const WEBSOCKET_PATH = '/v1/ws';
 const PAGE_SIZE = 30;
 
 type SortMode = 'market_cap' | 'newest' | 'volume_24h';
-type EngineFilter = 'all' | 'direct' | 'curve';
+type EngineFilter = 'all' | 'direct';
 type ConnectionState = 'offline' | 'loading' | 'connecting' | 'live' | 'reconnecting' | 'error';
 type StreamTransport = 'websocket' | 'sse';
 type MarketEngine = 'direct' | 'curve';
@@ -55,7 +54,6 @@ const sortOptions: Array<{ value: SortMode; label: string; zh: string }> = [
 const filterOptions: Array<{ value: EngineFilter; label: string; zh: string }> = [
   { value: 'all', label: 'All', zh: '全部' },
   { value: 'direct', label: 'Direct', zh: '直开' },
-  { value: 'curve', label: 'Curve', zh: '曲线' },
 ];
 
 const usdCompact = new Intl.NumberFormat('en-US', {
@@ -477,7 +475,7 @@ export function RealtimeMarketFeed() {
     const requestedSearch = params.get('q')?.trim() || '';
     queueMicrotask(() => {
       if (requestedSort === 'market_cap' || requestedSort === 'newest' || requestedSort === 'volume_24h') setSort(requestedSort);
-      if (requestedEngine === 'direct' || requestedEngine === 'curve') setEngineFilter(requestedEngine);
+      if (requestedEngine === 'direct') setEngineFilter(requestedEngine);
       setRewardOnly(params.get('reward') === '1' || params.get('reward') === 'true');
       setSearchInput(requestedSearch);
       setSearchQuery(requestedSearch);
@@ -710,11 +708,11 @@ export function RealtimeMarketFeed() {
           <h2 id="quote-market-feed-title" className="copy-en">QUOTE market feed</h2>
           <h2 className="copy-zh">QUOTE 市场流</h2>
         </div>
-        <Link className="feed-launch-link" href="/launch">
+        <a className="feed-launch-link" href="/launch">
           <span className="copy-en">Create market</span>
           <span className="copy-zh">创建市场</span>
           <ArrowRight size={15} />
-        </Link>
+        </a>
       </header>
 
       <div className="feed-shell">
