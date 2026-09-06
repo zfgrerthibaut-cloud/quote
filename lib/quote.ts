@@ -1,7 +1,7 @@
 import { isAddress, parseUnits, type Address, type Hex } from 'viem';
 
 export const FIXED_SUPPLY = 100_000_000n * 10n ** 18n;
-export const DEFAULT_FEE_TIER = 500;
+export const DEFAULT_FEE_TIER = 10_000;
 export const FEE_TICK_SPACING = {
   100: 1,
   500: 10,
@@ -80,7 +80,7 @@ const launchRecordComponents = [
   { name: 'feeTier', type: 'uint24' },
 ] as const;
 
-export const forkPareFactoryAbi = [
+export const quoteFactoryAbi = [
   {
     type: 'event',
     name: 'MarketLaunched',
@@ -116,7 +116,7 @@ export const forkPareFactoryAbi = [
 ] as const;
 
 export function configuredFactory(): Address | undefined {
-  const value = process.env.NEXT_PUBLIC_FORKPARE_FACTORY;
+  const value = process.env.NEXT_PUBLIC_QUOTE_LAUNCHPAD;
   return value && isAddress(value) ? value : undefined;
 }
 

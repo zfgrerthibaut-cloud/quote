@@ -5,10 +5,10 @@ import { decodeEventLog, encodeAbiParameters, encodeEventTopics } from 'viem';
 import {
   buildPriceRange,
   FEE_TICK_SPACING,
-  forkPareFactoryAbi,
+  quoteFactoryAbi,
   getTickAtSqrtRatio,
   sqrtRatioAtTick,
-} from './forkpare.ts';
+} from './quote.ts';
 
 const Q96 = 1n << 96n;
 
@@ -18,9 +18,9 @@ test('builds exact 1:1 raw boundary in both token orders', () => {
 
   assert.equal(token0.sqrtPriceX96, Q96);
   assert.equal(token0.tickLower, 0);
-  assert.equal(token0.tickUpper, 887_270);
+  assert.equal(token0.tickUpper, 887_200);
   assert.equal(token1.sqrtPriceX96, Q96);
-  assert.equal(token1.tickLower, -887_270);
+  assert.equal(token1.tickLower, -887_200);
   assert.equal(token1.tickUpper, 0);
 });
 
@@ -70,7 +70,7 @@ test('decodes the exact MarketLaunched receipt used by the UI', () => {
   const pool = '0x4444444444444444444444444444444444444444';
   const locker = '0x5555555555555555555555555555555555555555';
   const topics = encodeEventTopics({
-    abi: forkPareFactoryAbi,
+    abi: quoteFactoryAbi,
     eventName: 'MarketLaunched',
     args: { launchId: 7n, creator, token },
   });
@@ -80,10 +80,10 @@ test('decodes the exact MarketLaunched receipt used by the UI', () => {
       { type: 'uint256' }, { type: 'uint256' }, { type: 'uint160' },
       { type: 'int24' }, { type: 'int24' }, { type: 'uint24' },
     ],
-    [quoteToken, pool, locker, 99n, 100_000_000n * 10n ** 18n, Q96, 0, 887_270, 500],
+    [quoteToken, pool, locker, 99n, 100_000_000n * 10n ** 18n, Q96, 0, 887_200, 10_000],
   );
 
-  const decoded = decodeEventLog({ abi: forkPareFactoryAbi, eventName: 'MarketLaunched', topics, data });
+  const decoded = decodeEventLog({ abi: quoteFactoryAbi, eventName: 'MarketLaunched', topics, data });
   assert.equal(decoded.args.token, token);
   assert.equal(decoded.args.pool, pool);
   assert.equal(decoded.args.locker, locker);

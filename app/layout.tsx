@@ -11,7 +11,7 @@ const plexMono = IBM_Plex_Mono({ variable: '--font-plex-mono', subsets: ['latin'
 const notoSansSc = Noto_Sans_SC({ variable: '--font-noto-sc', subsets: ['latin'], weight: ['400', '500', '600'] });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://forkpare-bsc.momokhitam201.chatgpt.site'),
+  metadataBase: new URL('https://quote-bsc.momokhitam201.chatgpt.site'),
   title: 'QUOTE',
   description: 'Create a token against any eligible BEP-20 and launch directly on PancakeSwap V3.',
   openGraph: {

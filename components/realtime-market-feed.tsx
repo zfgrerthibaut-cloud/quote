@@ -386,8 +386,9 @@ function formatLatency(value?: number) {
   return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(2)} s`;
 }
 
-function marketMatchesFilter(market: MarketRecord, engine: EngineFilter, rewardOnly: boolean) {
+function marketMatchesFilter(market: MarketRecord, engine: EngineFilter, rewardOnly: boolean, quoteAddress: string) {
   if (rewardOnly && market.reward !== true) return false;
+  if (quoteAddress && market.quoteAddress?.toLowerCase() !== quoteAddress) return false;
   return engine === 'all' || market.engine === engine;
 }
 
@@ -405,11 +406,12 @@ function marketMatchesSearch(market: MarketRecord, query: string) {
   ].some((value) => value?.toLowerCase().includes(needle));
 }
 
-function snapshotPath(sort: SortMode, engine: EngineFilter, rewardOnly: boolean, query: string, cursor?: string) {
+function snapshotPath(sort: SortMode, engine: EngineFilter, rewardOnly: boolean, query: string, quoteAddress: string, cursor?: string) {
   const params = new URLSearchParams({ limit: String(PAGE_SIZE), sort });
   if (engine !== 'all') params.set('engine', engine);
   if (rewardOnly) params.set('reward', 'true');
   if (query.trim()) params.set('q', query.trim());
+  if (/^0x[a-fA-F0-9]{40}$/.test(quoteAddress)) params.set('quote', quoteAddress.toLowerCase());
   if (cursor) params.set('cursor', cursor);
   return `/v1/markets?${params.toString()}`;
 }
@@ -459,6 +461,8 @@ export function RealtimeMarketFeed() {
   const [rewardOnly, setRewardOnly] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [quoteInput, setQuoteInput] = useState('');
+  const [quoteFilter, setQuoteFilter] = useState('');
   const [status, setStatus] = useState<ConnectionState>(QUOTE_API_URL ? 'loading' : 'offline');
   const [error, setError] = useState<string | null>(null);
   const [lastEventId, setLastEventId] = useState<string | null>(null);
@@ -473,12 +477,17 @@ export function RealtimeMarketFeed() {
     const requestedSort = params.get('sort');
     const requestedEngine = params.get('engine');
     const requestedSearch = params.get('q')?.trim() || '';
+    const requestedQuote = params.get('quote')?.trim().toLowerCase() || '';
     queueMicrotask(() => {
       if (requestedSort === 'market_cap' || requestedSort === 'newest' || requestedSort === 'volume_24h') setSort(requestedSort);
       if (requestedEngine === 'direct') setEngineFilter(requestedEngine);
       setRewardOnly(params.get('reward') === '1' || params.get('reward') === 'true');
       setSearchInput(requestedSearch);
       setSearchQuery(requestedSearch);
+      if (/^0x[a-f0-9]{40}$/.test(requestedQuote)) {
+        setQuoteInput(requestedQuote);
+        setQuoteFilter(requestedQuote);
+      }
       setParamsReady(true);
     });
   }, []);
@@ -487,6 +496,14 @@ export function RealtimeMarketFeed() {
     const timer = window.setTimeout(() => setSearchQuery(searchInput.trim()), 200);
     return () => window.clearTimeout(timer);
   }, [searchInput]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const value = quoteInput.trim().toLowerCase();
+      setQuoteFilter(/^0x[a-f0-9]{40}$/.test(value) ? value : '');
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [quoteInput]);
 
   useEffect(() => {
     if (!QUOTE_API_URL) return;
@@ -581,7 +598,7 @@ export function RealtimeMarketFeed() {
       setError(null);
 
       try {
-        const response = await fetch(buildUrl(snapshotPath('market_cap', 'all', false, '')), { cache: 'no-store', signal: controller.signal });
+        const response = await fetch(buildUrl(snapshotPath('market_cap', 'all', false, '', '')), { cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error(`snapshot_${response.status}`);
 
         const payload = (await response.json()) as unknown;
@@ -621,7 +638,7 @@ export function RealtimeMarketFeed() {
     const controller = new AbortController();
     async function refreshView() {
       try {
-        const response = await fetch(buildUrl(snapshotPath(sort, engineFilter, rewardOnly, searchQuery)), {
+        const response = await fetch(buildUrl(snapshotPath(sort, engineFilter, rewardOnly, searchQuery, quoteFilter)), {
           cache: 'no-store',
           signal: controller.signal,
         });
@@ -641,7 +658,7 @@ export function RealtimeMarketFeed() {
     }
     void refreshView();
     return () => controller.abort();
-  }, [engineFilter, paramsReady, rewardOnly, searchQuery, sort]);
+  }, [engineFilter, paramsReady, quoteFilter, rewardOnly, searchQuery, sort]);
 
   useEffect(() => {
     if (!paramsReady) return;
@@ -649,16 +666,17 @@ export function RealtimeMarketFeed() {
     if (searchQuery) params.set('q', searchQuery);
     if (engineFilter !== 'all') params.set('engine', engineFilter);
     if (rewardOnly) params.set('reward', '1');
+    if (quoteFilter) params.set('quote', quoteFilter);
     if (sort !== 'market_cap') params.set('sort', sort);
     const query = params.toString();
     window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
-  }, [engineFilter, paramsReady, rewardOnly, searchQuery, sort]);
+  }, [engineFilter, paramsReady, quoteFilter, rewardOnly, searchQuery, sort]);
 
   async function loadMore() {
     if (!QUOTE_API_URL || !nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const response = await fetch(buildUrl(snapshotPath(sort, engineFilter, rewardOnly, searchQuery, nextCursor)), { cache: 'no-store' });
+      const response = await fetch(buildUrl(snapshotPath(sort, engineFilter, rewardOnly, searchQuery, quoteFilter, nextCursor)), { cache: 'no-store' });
       if (!response.ok) throw new Error(`snapshot_${response.status}`);
       const payload = (await response.json()) as unknown;
       const eventId = snapshotEventId(payload);
@@ -677,10 +695,10 @@ export function RealtimeMarketFeed() {
 
   const filteredMarkets = useMemo(
     () => markets
-      .filter((market) => marketMatchesFilter(market, engineFilter, rewardOnly))
+      .filter((market) => marketMatchesFilter(market, engineFilter, rewardOnly, quoteFilter))
       .filter((market) => marketMatchesSearch(market, searchQuery))
       .sort(compareMarkets(sort)),
-    [engineFilter, markets, rewardOnly, searchQuery, sort],
+    [engineFilter, markets, quoteFilter, rewardOnly, searchQuery, sort],
   );
 
   const counts = useMemo(
@@ -747,6 +765,17 @@ export function RealtimeMarketFeed() {
               value={searchInput}
             />
           </label>
+          <label className="feed-quote-filter">
+            <span>QUOTE FILTER</span>
+            <input
+              aria-invalid={Boolean(quoteInput && !/^0x[a-fA-F0-9]{40}$/.test(quoteInput.trim()))}
+              aria-label="Filter by quote-token contract"
+              onChange={(event) => setQuoteInput(event.target.value)}
+              placeholder="Exact quote-token address · 0x…"
+              spellCheck={false}
+              value={quoteInput}
+            />
+          </label>
           <div className="feed-controls">
             <div className="control-group" role="group" aria-label="Filter markets">
               {filterOptions.map((option) => (
@@ -782,6 +811,17 @@ export function RealtimeMarketFeed() {
                   <span className="copy-zh">{option.zh}</span>
                 </button>
               ))}
+              {(searchQuery || quoteFilter || engineFilter !== 'all' || rewardOnly || sort !== 'market_cap') ? (
+                <button type="button" onClick={() => {
+                  setSearchInput('');
+                  setSearchQuery('');
+                  setQuoteInput('');
+                  setQuoteFilter('');
+                  setEngineFilter('all');
+                  setRewardOnly(false);
+                  setSort('market_cap');
+                }}>Reset</button>
+              ) : null}
             </div>
           </div>
 
@@ -796,12 +836,13 @@ export function RealtimeMarketFeed() {
 
             <AnimatePresence initial={false}>
               {filteredMarkets.map((market) => (
-                <motion.article
+                <motion.a
                   animate={{ opacity: 1, y: 0 }}
                   className="market-row"
                   exit={{ opacity: 0, y: -6 }}
                   initial={{ opacity: 0, y: 8 }}
                   key={market.key}
+                  href={`/explore/${(market.marketAddress || market.tokenAddress || '').toLowerCase()}`}
                   layout
                   role="row"
                   transition={{ damping: 34, stiffness: 420, type: 'spring' }}
@@ -839,7 +880,7 @@ export function RealtimeMarketFeed() {
                       </a>
                     ) : null}
                   </div>
-                </motion.article>
+                </motion.a>
               ))}
             </AnimatePresence>
 
@@ -1008,6 +1049,36 @@ export function RealtimeMarketFeed() {
           color: var(--muted);
         }
 
+        .realtime-feed .feed-quote-filter {
+          min-height: 48px;
+          padding: 8px 18px;
+          display: grid;
+          grid-template-columns: 94px minmax(0, 1fr);
+          align-items: center;
+          gap: 12px;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .realtime-feed .feed-quote-filter span {
+          color: var(--muted);
+          font: 600 8px var(--font-plex-mono);
+          letter-spacing: .1em;
+        }
+
+        .realtime-feed .feed-quote-filter input {
+          width: 100%;
+          height: 32px;
+          padding: 0 10px;
+          border: 1px solid transparent;
+          background: rgba(255, 255, 255, .025);
+          color: var(--bone);
+          font: 500 9px var(--font-plex-mono);
+        }
+
+        .realtime-feed .feed-quote-filter input[aria-invalid="true"] {
+          border-color: var(--danger);
+        }
+
         .realtime-feed .feed-controls {
           padding: 14px;
           display: flex;
@@ -1072,6 +1143,8 @@ export function RealtimeMarketFeed() {
           letter-spacing: .1em;
           text-transform: uppercase;
           border-bottom: 1px solid var(--line);
+          color: inherit;
+          text-decoration: none;
         }
 
         .realtime-feed .market-row {

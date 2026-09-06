@@ -13,15 +13,15 @@ const quoteAssets = [
   { symbol: 'ASTER', address: '0x000Ae314E2A2172a039B26378814C252734f556A', image: '/tokens/aster.jpg' },
 ] as const;
 
-const PLATFORM_FEE_BPS = 25;
+const POOL_FEE_BPS = 100;
 
 type TokenMode = 'Standard' | 'Reward';
 type QuoteStatus = { state: 'idle' | 'loading' | 'valid' | 'invalid'; symbol?: string; decimals?: number; note?: string };
 
-function Choice<T extends string>({ value, current, onSelect, label, note }: { value: T; current: T; onSelect: (value: T) => void; label: string; note: string }) {
+function Choice<T extends string>({ value, current, onSelect, label, note, disabled = false }: { value: T; current: T; onSelect: (value: T) => void; label: string; note: string; disabled?: boolean }) {
   const active = value === current;
   return (
-    <button className={`choice-card ${active ? 'active' : ''}`} type="button" onClick={() => onSelect(value)} aria-pressed={active}>
+    <button className={`choice-card ${active ? 'active' : ''}`} type="button" onClick={() => onSelect(value)} aria-pressed={active} disabled={disabled}>
       {active && <motion.i layoutId="choice-mode" transition={{ type: 'spring', stiffness: 430, damping: 36 }} />}
       <span>{label}</span><small>{note}</small>
     </button>
@@ -55,12 +55,10 @@ export function LaunchDesk() {
   const [imageUrl, setImageUrl] = useState<string>();
   const [devBuy, setDevBuy] = useState(false);
   const [devBuyBnb, setDevBuyBnb] = useState('0.25');
-  const [creatorFee, setCreatorFee] = useState(25);
-  const [rewardFee, setRewardFee] = useState(50);
   const [creatorLpShare, setCreatorLpShare] = useState(7000);
   const [reviewed, setReviewed] = useState(false);
 
-  const totalTax = PLATFORM_FEE_BPS + creatorFee + (mode === 'Reward' ? rewardFee : 0);
+  const platformLpShare = 10_000 - creatorLpShare;
   const activeQuote = quoteAssets.find((asset) => asset.address.toLowerCase() === quoteAddress.toLowerCase());
   const resolvedQuoteImage = isAddress(quoteAddress) && quote.state === 'valid' && !quoteImageFailed
     ? `/api/token-image/${quoteAddress.toLowerCase()}`
@@ -106,13 +104,11 @@ export function LaunchDesk() {
     ['Supply', '100,000,000'],
     ['Quote', quote.symbol || '—'],
     ['Dev buy', devBuy ? `${devBuyBnb || '0'} BNB` : 'Off'],
-    ['Pool sell fee', 'Pool default'],
-    ['Platform fee', `${(PLATFORM_FEE_BPS / 100).toFixed(2)}%`],
-    ['Creator swap fee', creatorFee ? `${(creatorFee / 100).toFixed(2)}%` : 'Off'],
-    ['Reward fee', mode === 'Reward' ? `${(rewardFee / 100).toFixed(2)}%` : '—'],
-    ['Creator fee split', `${(creatorLpShare / 100).toFixed(0)}%`],
-    ['Hook total', `${(totalTax / 100).toFixed(2)}%`],
-  ], [creatorFee, creatorLpShare, devBuy, devBuyBnb, mode, quote.symbol, rewardFee, totalTax]);
+    ['Pool fee', `${(POOL_FEE_BPS / 100).toFixed(2)}% fixed`],
+    ['Creator LP fees', `${(creatorLpShare / 100).toFixed(0)}%`],
+    ['Platform LP fees', `${(platformLpShare / 100).toFixed(0)}%`],
+    ['LP position', 'Permanently locked'],
+  ], [creatorLpShare, devBuy, devBuyBnb, mode, platformLpShare, quote.symbol]);
 
   function selectQuote(asset: typeof quoteAssets[number]) {
     setQuoteAddress(asset.address);
@@ -170,7 +166,7 @@ export function LaunchDesk() {
           </div>
           <div className="choice-grid">
             <Choice value="Standard" current={mode} onSelect={(next) => { setMode(next); setReviewed(false); }} label="Standard token" note="Simple fixed supply" />
-            <Choice value="Reward" current={mode} onSelect={(next) => { setMode(next); setReviewed(false); }} label="Reward token" note="Fees accrue to holders" />
+            <Choice value="Reward" current={mode} onSelect={(next) => { setMode(next); setReviewed(false); }} label="Reward token" note="Security review in progress" disabled />
           </div>
         </section>
 
@@ -186,11 +182,10 @@ export function LaunchDesk() {
         </section>
 
         <section className="form-section economics">
-          <div className="section-number"><span>04</span><div><b>Economics</b><small className="copy-en">Set before launch</small><small className="copy-zh">发行前固定</small></div></div>
-          <div className="fixed-fee-row"><div><b>Pool sell fee</b><small>Base pool default</small></div><span>READ ONLY</span></div>
-          <FeeRail label="Creator swap fee" detail="Max 1.00%" values={[0, 25, 50, 100]} value={creatorFee} onChange={(next) => { setCreatorFee(next); setReviewed(false); }} />
-          {mode === 'Reward' && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}><FeeRail label="Reward fee" detail="Distributed to holders" values={[25, 50, 100, 300]} value={rewardFee} onChange={(next) => { setRewardFee(next); setReviewed(false); }} /></motion.div>}
-          <FeeRail label="Creator fee split" detail="Collected pool fees" values={[0, 5000, 7000, 10000]} value={creatorLpShare} onChange={(next) => { setCreatorLpShare(next); setReviewed(false); }} />
+          <div className="section-number"><span>04</span><div><b>LP fee allocation</b><small className="copy-en">Fixed for this market</small><small className="copy-zh">此市场永久固定</small></div></div>
+          <div className="fixed-fee-row"><div><b>PancakeSwap V3 pool fee</b><small>Applies to every swap in either direction</small></div><span>{(POOL_FEE_BPS / 100).toFixed(2)}% FIXED</span></div>
+          <FeeRail label="Creator share" detail="Share of collected LP fees" values={[0, 5000, 7000, 10000]} value={creatorLpShare} onChange={(next) => { setCreatorLpShare(next); setReviewed(false); }} />
+          <div className="fixed-fee-row"><div><b>Platform share</b><small>Remainder of collected LP fees</small></div><span>{(platformLpShare / 100).toFixed(0)}%</span></div>
           <div className="dev-buy-row">
             <button type="button" className={devBuy ? 'active' : ''} onClick={() => { setDevBuy(!devBuy); setReviewed(false); }}><span>{devBuy && <motion.i layoutId="dev-buy-toggle" />}</span><div><b>Creator buy</b><small>Buy at launch directly with BNB</small></div></button>
             {devBuy && <motion.label initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}><input value={devBuyBnb} onChange={(event) => setDevBuyBnb(event.target.value)} inputMode="decimal" /><b>BNB</b></motion.label>}
@@ -210,7 +205,7 @@ export function LaunchDesk() {
           <div><small>MARKET</small><strong>{symbol || 'TOKEN'} / {quote.symbol || 'QUOTE'}</strong></div>
         </div>
         <div className="receipt-rows">{receiptRows.map(([label, value]) => <div key={label}><span>{label}</span><b>{value}</b></div>)}</div>
-        <div className="fee-composition"><span style={{ width: `${Math.min(100, (PLATFORM_FEE_BPS / totalTax) * 100)}%` }} /><span style={{ width: `${Math.min(100, (creatorFee / totalTax) * 100)}%` }} />{mode === 'Reward' && <span style={{ width: `${Math.min(100, (rewardFee / totalTax) * 100)}%` }} />}</div>
+        <div className="fee-composition"><span style={{ width: `${creatorLpShare / 100}%` }} /><span style={{ width: `${platformLpShare / 100}%` }} /></div>
         <p><LockKeyhole size={12} /> Market rules become permanent at launch.</p>
       </aside>
     </div>
