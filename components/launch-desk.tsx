@@ -1,328 +1,194 @@
 'use client';
 
-import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowUpRight, Check, LoaderCircle, ShieldCheck, TriangleAlert } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { ImagePlus, LoaderCircle, LockKeyhole, ShieldCheck, Sparkles, TriangleAlert } from 'lucide-react';
+import { motion } from 'motion/react';
+import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
-import { erc20Abi, formatEther, isAddress, keccak256, parseEventLogs, stringToHex, type Address, type Hash } from 'viem';
-import {
-  useAccount,
-  useChainId,
-  usePublicClient,
-  useSwitchChain,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from 'wagmi';
-import { bsc } from 'wagmi/chains';
-import { z } from 'zod';
+import { erc20Abi, isAddress, type Address } from 'viem';
+import { usePublicClient } from 'wagmi';
 
-import {
-  buildPriceRange,
-  configuredFactory,
-  DEFAULT_FEE_TIER,
-  FEE_TICK_SPACING,
-  FIXED_SUPPLY,
-  forkPareFactoryAbi,
-  type SupportedFeeTier,
-  type LaunchParams,
-} from '@/lib/forkpare';
-import { PunchStrip } from '@/components/quote-switchboard';
+const quoteAssets = [
+  { symbol: 'MARSCOIN', address: '0xfe189e97832da1573e4e4ff034f4ffc3a15c7777', image: '/tokens/marscoin.png' },
+  { symbol: 'BABAB', address: '0xe5ae318389b8d6d09370a675479c64862152d126', image: '/tokens/alibaba.png' },
+  { symbol: 'ASTER', address: '0x000Ae314E2A2172a039B26378814C252734f556A', image: '/tokens/aster.jpg' },
+] as const;
 
-const launchSchema = z.object({
-  name: z.string().trim().min(1, 'Enter a token name').max(64, '64 characters maximum'),
-  symbol: z.string().trim().min(1, 'Enter a ticker').max(12, '12 characters maximum').regex(/^[A-Za-z0-9]+$/, 'Letters and numbers only'),
-  quoteToken: z.string().trim().refine(isAddress, 'Enter a valid BEP-20 address'),
-  startingPrice: z.string().trim().regex(/^\d+(\.\d+)?$/, 'Enter a positive decimal price').refine((value) => Number(value) > 0, 'Price must be above zero'),
-  feeTier: z.coerce.number().refine((value) => value === 100 || value === 500 || value === 2500 || value === 10000, 'Choose a Pancake V3 fee tier'),
-});
+type Engine = 'Direct' | 'Curve';
+type TokenMode = 'Standard' | 'Reward';
+type QuoteStatus = { state: 'idle' | 'loading' | 'valid' | 'invalid'; symbol?: string; decimals?: number; note?: string };
 
-type LaunchForm = z.infer<typeof launchSchema>;
-type QuoteState = { status: 'idle' | 'checking' | 'valid' | 'invalid'; symbol?: string; decimals?: number; note?: string };
-type PreparedLaunch = { params: LaunchParams; predictedToken: Address; creationFee: bigint };
+function Choice<T extends string>({ value, current, onSelect, label, note }: { value: T; current: T; onSelect: (value: T) => void; label: string; note: string }) {
+  const active = value === current;
+  return (
+    <button className={`choice-card ${active ? 'active' : ''}`} type="button" onClick={() => onSelect(value)} aria-pressed={active}>
+      {active && <motion.i layoutId={`choice-${label.includes('Direct') || label.includes('Curve') ? 'engine' : 'mode'}`} transition={{ type: 'spring', stiffness: 430, damping: 36 }} />}
+      <span>{label}</span><small>{note}</small>
+    </button>
+  );
+}
 
-function addressNumber(address: Address) {
-  return BigInt(address.toLowerCase());
+function FeeRail({ label, detail, values, value, onChange }: { label: string; detail: string; values: number[]; value: number; onChange: (value: number) => void }) {
+  return (
+    <div className="fee-control">
+      <div className="control-copy"><b>{label}</b><small>{detail}</small></div>
+      <div className="fee-buttons">
+        {values.map((fee) => (
+          <button key={fee} type="button" className={fee === value ? 'active' : ''} onClick={() => onChange(fee)}>
+            {fee === value && <motion.i layoutId={`fee-${label}`} transition={{ type: 'spring', stiffness: 460, damping: 38 }} />}
+            <span>{fee === 0 ? 'Off' : `${(fee / 100).toFixed(2)}%`}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function LaunchDesk() {
   const publicClient = usePublicClient();
-  const chainId = useChainId();
-  const { address, isConnected } = useAccount();
-  const { switchChain, isPending: isSwitching } = useSwitchChain();
-  const { writeContract, data: transactionHash, isPending: isSigning, error: writeError } = useWriteContract();
-  const receipt = useWaitForTransactionReceipt({ hash: transactionHash as Hash | undefined });
-  const [quote, setQuote] = useState<QuoteState>({ status: 'idle' });
-  const [prepared, setPrepared] = useState<PreparedLaunch>();
-  const [prepareError, setPrepareError] = useState<string>();
-  const factory = configuredFactory();
+  const [name, setName] = useState('');
+  const [symbol, setSymbol] = useState('');
+  const [engine, setEngine] = useState<Engine>('Direct');
+  const [mode, setMode] = useState<TokenMode>('Standard');
+  const [quoteAddress, setQuoteAddress] = useState<string>(quoteAssets[0].address);
+  const [quote, setQuote] = useState<QuoteStatus>({ state: 'idle', symbol: 'MARSCOIN' });
+  const [imageUrl, setImageUrl] = useState<string>();
+  const [devBuy, setDevBuy] = useState(false);
+  const [devBuyBnb, setDevBuyBnb] = useState('0.25');
+  const [creatorFee, setCreatorFee] = useState(25);
+  const [rewardFee, setRewardFee] = useState(50);
+  const [reviewed, setReviewed] = useState(false);
 
-  const form = useForm<LaunchForm>({
-    resolver: zodResolver(launchSchema),
-    defaultValues: {
-      name: '',
-      symbol: '',
-      quoteToken: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
-      startingPrice: '0.000001',
-      feeTier: DEFAULT_FEE_TIER,
-    },
-  });
-  const selectedFeeTier = useWatch({ control: form.control, name: 'feeTier' });
-  const selectedSymbol = useWatch({ control: form.control, name: 'symbol' });
-  const selectedQuote = useWatch({ control: form.control, name: 'quoteToken' });
+  const totalTax = 25 + creatorFee + (mode === 'Reward' ? rewardFee : 0);
+  const activeQuote = quoteAssets.find((asset) => asset.address.toLowerCase() === quoteAddress.toLowerCase());
+  const previewImage = imageUrl || undefined;
+  const complete = name.trim() && symbol.trim() && quote.state === 'valid';
+
+  useEffect(() => () => { if (imageUrl?.startsWith('blob:')) URL.revokeObjectURL(imageUrl); }, [imageUrl]);
 
   useEffect(() => {
     const address = new URLSearchParams(window.location.search).get('quote');
-    if (address && isAddress(address)) {
-      form.setValue('quoteToken', address, { shouldDirty: true, shouldValidate: true });
-    }
-  }, [form]);
+    if (address && isAddress(address)) queueMicrotask(() => setQuoteAddress(address));
+  }, []);
 
-  const launchedMarket = useMemo(() => {
-    if (!receipt.data) return undefined;
-    const logs = parseEventLogs({
-      abi: forkPareFactoryAbi,
-      eventName: 'MarketLaunched',
-      logs: receipt.data.logs,
-      strict: false,
-    });
-    return logs[0]?.args;
-  }, [receipt.data]);
-
-  function resetPreparation() {
-    setPrepared(undefined);
-    setPrepareError(undefined);
-  }
-
-  async function buildPreparedLaunch(values: LaunchForm, quoteDecimals: number, deadline: bigint) {
-    if (!publicClient || !factory || !address) return;
-    const quoteToken = values.quoteToken as Address;
-    const creationFee = await publicClient.readContract({
-      address: factory,
-      abi: forkPareFactoryAbi,
-      functionName: 'creationFee',
-    });
-
-    for (let attempt = 0; attempt < 64; attempt += 1) {
-      for (const launchTokenIsToken0 of [true, false]) {
-        const feeTier = values.feeTier as SupportedFeeTier;
-        const range = buildPriceRange(
-          values.startingPrice,
-          quoteDecimals,
-          launchTokenIsToken0,
-          FEE_TICK_SPACING[feeTier],
-        );
-        const userSalt = keccak256(stringToHex(`${address}:${values.name}:${values.symbol}:${attempt}`));
-        const params: LaunchParams = {
-          name: values.name.trim(),
-          symbol: values.symbol.trim().toUpperCase(),
-          supply: FIXED_SUPPLY,
-          quoteToken,
-          feeTier,
-          sqrtPriceX96: range.sqrtPriceX96,
-          tickLower: range.tickLower,
-          tickUpper: range.tickUpper,
-          deadline,
-          userSalt,
-        };
-        const predictedToken = await publicClient.readContract({
-          address: factory,
-          abi: forkPareFactoryAbi,
-          functionName: 'predictToken',
-          args: [address, params],
-        });
-        const consistent = launchTokenIsToken0
-          ? addressNumber(predictedToken) < addressNumber(quoteToken)
-          : addressNumber(predictedToken) > addressNumber(quoteToken);
-        if (!consistent) continue;
-
-        await publicClient.simulateContract({
-          account: address,
-          address: factory,
-          abi: forkPareFactoryAbi,
-          functionName: 'launch',
-          args: [params],
-          value: creationFee,
-        });
-        setPrepared({ params, predictedToken, creationFee });
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      if (!publicClient || !isAddress(quoteAddress)) {
+        setQuote({ state: quoteAddress ? 'invalid' : 'idle', note: quoteAddress ? 'Enter a valid BSC token address.' : undefined });
         return;
       }
-    }
-    throw new Error('Could not derive a deterministic token ordering. Change the token name and retry.');
+      setQuote({ state: 'loading' });
+      try {
+        const address = quoteAddress as Address;
+        const code = await publicClient.getCode({ address });
+        if (!code || code === '0x') throw new Error('No contract found at this address on BSC.');
+        const [tokenSymbol, decimals] = await Promise.all([
+          publicClient.readContract({ address, abi: erc20Abi, functionName: 'symbol' }),
+          publicClient.readContract({ address, abi: erc20Abi, functionName: 'decimals' }),
+        ]);
+        if (!cancelled) setQuote({ state: 'valid', symbol: tokenSymbol, decimals, note: 'Contract and metadata read from BSC.' });
+      } catch (error) {
+        if (!cancelled) setQuote({ state: 'invalid', note: error instanceof Error ? error.message : 'Token could not be verified.' });
+      }
+    }, 380);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [publicClient, quoteAddress]);
+
+  const receiptRows = useMemo(() => [
+    ['Engine', engine],
+    ['Token', mode],
+    ['Supply', '100,000,000'],
+    ['Quote', quote.symbol || '—'],
+    ['Dev buy', devBuy ? `${devBuyBnb || '0'} BNB` : 'Off'],
+    ['Pool fee', '0.25% default'],
+    ['Protocol tax', '0.25%'],
+    ['Creator tax', creatorFee ? `${(creatorFee / 100).toFixed(2)}%` : 'Off'],
+    ['Reward tax', mode === 'Reward' ? `${(rewardFee / 100).toFixed(2)}%` : '—'],
+    ['Total tax', `${(totalTax / 100).toFixed(2)}%`],
+  ], [creatorFee, devBuy, devBuyBnb, engine, mode, quote.symbol, rewardFee, totalTax]);
+
+  function selectQuote(asset: typeof quoteAssets[number]) {
+    setQuoteAddress(asset.address);
+    setQuote({ state: 'idle', symbol: asset.symbol });
   }
 
-  const validateAndPrepare = form.handleSubmit(async (values) => {
-    if (!publicClient) return;
-    resetPreparation();
-    setQuote({ status: 'checking' });
-    let metadataValid = false;
-    try {
-      const quoteToken = values.quoteToken as Address;
-      const bytecode = await publicClient.getCode({ address: quoteToken });
-      if (!bytecode || bytecode === '0x') {
-        setQuote({ status: 'invalid', note: 'No contract code at this address on BSC.' });
-        return;
-      }
-      const [symbol, decimals] = await Promise.all([
-        publicClient.readContract({ address: quoteToken, abi: erc20Abi, functionName: 'symbol' }),
-        publicClient.readContract({ address: quoteToken, abi: erc20Abi, functionName: 'decimals' }),
-      ]);
-      const validQuote: QuoteState = {
-        status: 'valid', symbol, decimals,
-        note: 'ERC-20 metadata responds. Transfer behavior is not guaranteed.',
-      };
-      setQuote(validQuote);
-      metadataValid = true;
-      if (factory && address) {
-        const latestBlock = await publicClient.getBlock({ blockTag: 'latest' });
-        const deadline = latestBlock.timestamp + 600n;
-        await buildPreparedLaunch(values, decimals, deadline);
-      }
-    } catch (error) {
-      if (metadataValid) {
-        setPrepareError(error instanceof Error ? error.message : 'Launch simulation failed.');
-      } else {
-        setQuote({ status: 'invalid', note: 'Metadata or launch simulation did not pass.' });
-      }
-    }
-  });
-
-  function submitPreparedLaunch() {
-    if (!factory || !prepared) return;
-    writeContract({
-      address: factory,
-      abi: forkPareFactoryAbi,
-      functionName: 'launch',
-      args: [prepared.params],
-      value: prepared.creationFee,
+  function handleImage(file?: File) {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 4 * 1024 * 1024) return;
+    setImageUrl((current) => {
+      if (current?.startsWith('blob:')) URL.revokeObjectURL(current);
+      return URL.createObjectURL(file);
     });
   }
-
-  const wrongNetwork = isConnected && chainId !== bsc.id;
-  const isBusy = quote.status === 'checking' || isSwitching || isSigning || receipt.isLoading;
-  const ctaLabel = wrongNetwork
-    ? 'Switch to BSC'
-    : isSigning
-      ? 'Confirm in wallet…'
-      : receipt.isLoading
-        ? 'Waiting for receipt…'
-        : prepared
-          ? `Launch · ${formatEther(prepared.creationFee)} BNB`
-          : quote.status === 'checking'
-            ? 'Reading BSC state…'
-            : quote.status === 'valid' && !factory
-              ? 'Quote verified on BSC'
-              : 'Check market on BSC';
 
   return (
-    <div className="launch-desk" id="launch">
-      <div className="desk-head">
-        <div>
-          <span className="copy-en">New market</span><span className="copy-zh">创建新市场</span>
-          <h2 className="copy-en">Launch console</h2><h2 className="copy-zh">发行面板</h2>
-        </div>
-        <span className={`network-pill ${factory ? 'is-ready' : 'is-offline'}`}><span /> {factory ? 'READY' : 'PREVIEW'}</span>
-      </div>
+    <div className="launch-workbench">
+      <form className="launch-form" onSubmit={(event) => { event.preventDefault(); if (complete) setReviewed(true); }}>
+        <header className="form-head"><div><span>CREATE / 01</span><h2>Compose the market</h2></div><b>PREVIEW</b></header>
 
-      <div className="launch-weave-preview" aria-hidden="true">
-        <div><small>BASE</small><b>{selectedSymbol?.trim().toUpperCase() || 'TOKEN'}</b></div>
-        <i>/</i>
-        <div><small>QUOTE</small><b>{quote.symbol || 'QUOTE'}</b></div>
-        <PunchStrip value={`${selectedSymbol || 'TOKEN'}:${selectedQuote || 'QUOTE'}`} />
-      </div>
-
-      <form onSubmit={prepared ? (event) => { event.preventDefault(); submitPreparedLaunch(); } : validateAndPrepare} noValidate>
-        <div className="field-grid">
-          <label>
-            <span><b className="copy-en">Token name</b><b className="copy-zh">代币名称</b></span>
-            <input placeholder="Name your token" aria-invalid={Boolean(form.formState.errors.name)} {...form.register('name', { onChange: resetPreparation })} />
-            {form.formState.errors.name && <small className="field-error">{form.formState.errors.name.message}</small>}
-          </label>
-          <label>
-            <span><b className="copy-en">Symbol</b><b className="copy-zh">代币代码</b></span>
-            <input placeholder="TICK" aria-invalid={Boolean(form.formState.errors.symbol)} maxLength={12} {...form.register('symbol', { onChange: resetPreparation })} />
-            {form.formState.errors.symbol && <small className="field-error">{form.formState.errors.symbol.message}</small>}
-          </label>
-        </div>
-
-        <label className="quote-field">
-          <span><b className="copy-en">Quote token</b><b className="copy-zh">计价代币地址</b></span>
-          <div className="quote-address-field">
-            <input id="quote-token-input" defaultValue="0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" aria-invalid={Boolean(form.formState.errors.quoteToken)} {...form.register('quoteToken', { onChange: () => { setQuote({ status: 'idle' }); resetPreparation(); } })} />
-            {quote.status === 'checking' && <LoaderCircle className="spin" size={17} />}
-            {quote.status === 'valid' && <Check size={17} />}
+        <section className="form-section">
+          <div className="section-number"><span>01</span><div><b>Identity</b><small>Permanent token details</small></div></div>
+          <div className="identity-grid">
+            <label><span>Token name</span><input value={name} onChange={(event) => { setName(event.target.value); setReviewed(false); }} placeholder="Mars Station" maxLength={64} /></label>
+            <label><span>Ticker</span><input value={symbol} onChange={(event) => { setSymbol(event.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()); setReviewed(false); }} placeholder="MARS" maxLength={12} /></label>
+            <label className="image-drop">
+              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => handleImage(event.target.files?.[0])} />
+              <span>{previewImage ? <Image src={previewImage} alt="Token preview" fill unoptimized /> : <ImagePlus size={19} />}</span>
+              <div><b>{previewImage ? 'Image selected' : 'Add image'}</b><small>PNG, JPG or WebP · 4 MB max</small></div>
+            </label>
           </div>
-          {form.formState.errors.quoteToken && <small className="field-error">{form.formState.errors.quoteToken.message}</small>}
-        </label>
+        </section>
 
-        <div className="quote-shortcuts" aria-label="Quote shortcuts">
-          <button type="button" onClick={() => { form.setValue('quoteToken', '0xfe189e97832da1573e4e4ff034f4ffc3a15c7777', { shouldValidate: true }); setQuote({ status: 'idle' }); resetPreparation(); }}>MARSCOIN</button>
-          <button type="button" onClick={() => { form.setValue('quoteToken', '0x4eF9d3062c7F6ebA4AAE4990c5036598C6eff4ec', { shouldValidate: true }); setQuote({ status: 'idle' }); resetPreparation(); }}>BABAB</button>
-          <button type="button" onClick={() => { form.setValue('quoteToken', '0x000Ae314E2A2172a039B26378814C252734f556A', { shouldValidate: true }); setQuote({ status: 'idle' }); resetPreparation(); }}>ASTER</button>
-        </div>
-
-        <div className="price-fee-grid">
-          <label className="price-field">
-            <span><b className="copy-en">Starting price</b><b className="copy-zh">初始价格</b></span>
-            <input defaultValue="0.000001" inputMode="decimal" aria-invalid={Boolean(form.formState.errors.startingPrice)} {...form.register('startingPrice', { onChange: resetPreparation })} />
-            {form.formState.errors.startingPrice && <small className="field-error">{form.formState.errors.startingPrice.message}</small>}
-          </label>
-          <label className="fee-field">
-            <span><b className="copy-en">Pool fee</b><b className="copy-zh">池手续费</b></span>
-            <select defaultValue={DEFAULT_FEE_TIER} aria-invalid={Boolean(form.formState.errors.feeTier)} {...form.register('feeTier', { onChange: resetPreparation })}>
-              <option value="100">0.01%</option>
-              <option value="500">0.05%</option>
-              <option value="2500">0.25%</option>
-              <option value="10000">1.00%</option>
-            </select>
-            {form.formState.errors.feeTier && <small className="field-error">{form.formState.errors.feeTier.message}</small>}
-          </label>
-        </div>
-
-        <AnimatePresence initial={false}>
-          {quote.status !== 'idle' && quote.status !== 'checking' && (
-            <motion.div className={`quote-result ${quote.status}`} role="status" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
-              {quote.status === 'valid' ? <Check size={15} /> : <TriangleAlert size={15} />}
-              <span>{quote.symbol && <b>{quote.symbol} · {quote.decimals} decimals</b>}{quote.note}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {prepared && <div className="prepared-launch"><span>Predicted token</span><b>{prepared.predictedToken}</b><span>Range</span><b>{prepared.params.tickLower} → {prepared.params.tickUpper}</b><span>Pool fee</span><b>{prepared.params.feeTier / 10_000}%</b></div>}
-        {(prepareError || writeError) && <p className="transaction-error" role="alert"><TriangleAlert size={14} /> {prepareError || writeError?.message}</p>}
-        {receipt.isSuccess && (
-          <div className="transaction-success" role="status">
-            <Check size={14} />
-            <span>
-              Included in block {receipt.data.blockNumber.toString()} ·{' '}
-              <a href={`https://bscscan.com/tx/${transactionHash}`} target="_blank" rel="noreferrer">receipt</a>
-              {launchedMarket?.token && (
-                <> · <a href={`https://bscscan.com/token/${launchedMarket.token}`} target="_blank" rel="noreferrer">token</a></>
-              )}
-              {launchedMarket?.pool && (
-                <> · <a href={`https://bscscan.com/address/${launchedMarket.pool}`} target="_blank" rel="noreferrer">pool</a></>
-              )}
-            </span>
+        <section className="form-section">
+          <div className="section-number"><span>02</span><div><b>Market path</b><small>How price discovery begins</small></div></div>
+          <div className="choice-grid">
+            <Choice value="Direct" current={engine} onSelect={(next) => { setEngine(next); setReviewed(false); }} label="Direct market" note="Liquidity opens immediately" />
+            <Choice value="Curve" current={engine} onSelect={(next) => { setEngine(next); setReviewed(false); }} label="Bonding curve" note="Graduates after the target" />
           </div>
-        )}
+          <div className="choice-grid">
+            <Choice value="Standard" current={mode} onSelect={(next) => { setMode(next); setReviewed(false); }} label="Standard token" note="Simple fixed supply" />
+            <Choice value="Reward" current={mode} onSelect={(next) => { setMode(next); setReviewed(false); }} label="Reward token" note="Fees accrue to holders" />
+          </div>
+        </section>
 
-        <div className="launch-summary">
-          <div><span>Supply</span><b>100M fixed</b></div>
-          <div><span>Pool fee</span><b>{Number(selectedFeeTier) / 10_000}%</b></div>
-          <div><span>Position</span><b><ShieldCheck size={14} /> Permanent</b></div>
-        </div>
+        <section className="form-section">
+          <div className="section-number"><span>03</span><div><b>Quote asset</b><small>Any eligible BEP-20</small></div></div>
+          <div className="quote-picks">
+            {quoteAssets.map((asset) => <button className={activeQuote?.symbol === asset.symbol ? 'active' : ''} key={asset.symbol} type="button" onClick={() => selectQuote(asset)}><Image src={asset.image} alt="" width={28} height={28} /><b>{asset.symbol}</b></button>)}
+            <button className={!activeQuote ? 'active' : ''} type="button" onClick={() => { setQuoteAddress(''); setQuote({ state: 'idle' }); setReviewed(false); }}>+ CUSTOM</button>
+          </div>
+          <label className="address-field"><span>Contract address</span><div><input value={quoteAddress} onChange={(event) => { setQuoteAddress(event.target.value.trim()); setReviewed(false); }} spellCheck={false} />{quote.state === 'loading' && <LoaderCircle className="spin" size={16} />}{quote.state === 'valid' && <ShieldCheck size={16} />}</div></label>
+          {quote.note && <p className={`quote-check ${quote.state}`}><span />{quote.symbol && <b>{quote.symbol} · {quote.decimals} decimals</b>}{quote.note}</p>}
+          <p className="eligibility-note"><LockKeyhole size={13} /> Launch requires at least $10,000 of verifiable quote-token liquidity against stablecoin or BNB.</p>
+        </section>
 
-        <button
-          className="launch-button"
-          type={wrongNetwork ? 'button' : 'submit'}
-          disabled={isBusy || (prepared ? !factory : false) || (quote.status === 'valid' && !factory)}
-          onClick={wrongNetwork ? () => switchChain({ chainId: bsc.id }) : undefined}
-        >
-          {ctaLabel} <ArrowUpRight size={18} />
-        </button>
+        <section className="form-section economics">
+          <div className="section-number"><span>04</span><div><b>Economics</b><small>Set before launch</small></div></div>
+          <div className="fixed-fee-row"><div><b>Pool fee</b><small>Pancake pool default</small></div><span>0.25% · FIXED</span></div>
+          <FeeRail label="Creator fee" detail="Paid on each trade" values={[0, 25, 50, 100]} value={creatorFee} onChange={(next) => { setCreatorFee(next); setReviewed(false); }} />
+          {mode === 'Reward' && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}><FeeRail label="Reward fee" detail="Distributed to holders" values={[25, 50, 100, 300]} value={rewardFee} onChange={(next) => { setRewardFee(next); setReviewed(false); }} /></motion.div>}
+          <div className="dev-buy-row">
+            <button type="button" className={devBuy ? 'active' : ''} onClick={() => { setDevBuy(!devBuy); setReviewed(false); }}><span>{devBuy && <motion.i layoutId="dev-buy-toggle" />}</span><div><b>Creator buy</b><small>Buy at launch directly with BNB</small></div></button>
+            {devBuy && <motion.label initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}><input value={devBuyBnb} onChange={(event) => setDevBuyBnb(event.target.value)} inputMode="decimal" /><b>BNB</b></motion.label>}
+          </div>
+        </section>
+
+        <button className={`review-button ${reviewed ? 'reviewed' : ''}`} type="submit" disabled={!complete}>{reviewed ? <><ShieldCheck size={17} /> Configuration ready</> : <><span>Review configuration</span><Sparkles size={16} /></>}</button>
+        <p className="form-caveat"><TriangleAlert size={12} /> Nothing is sent. V2 contracts are not deployed yet.</p>
       </form>
 
-      <p className="desk-note"><span className="status-dot" /> {factory ? 'Factory configured · simulation and exact receipt required' : 'Factory not deployed · validation only'}</p>
+      <aside className="launch-receipt">
+        <div className="receipt-top"><span>LAUNCH RECEIPT</span><b>{reviewed ? 'READY' : 'DRAFT'}</b></div>
+        <div className="receipt-art">
+          <div className="receipt-token">{previewImage ? <Image src={previewImage} alt="" fill unoptimized /> : <span>{symbol.slice(0, 2) || 'QT'}</span>}</div>
+          <i>/</i>
+          <div className="receipt-token quote">{activeQuote ? <Image src={activeQuote.image} alt="" fill /> : <span>?</span>}</div>
+          <div><small>MARKET</small><strong>{symbol || 'TOKEN'} / {quote.symbol || 'QUOTE'}</strong></div>
+        </div>
+        <div className="receipt-rows">{receiptRows.map(([label, value]) => <div key={label}><span>{label}</span><b>{value}</b></div>)}</div>
+        <div className="fee-composition"><span style={{ width: `${Math.min(100, (25 / totalTax) * 100)}%` }} /><span style={{ width: `${Math.min(100, (creatorFee / totalTax) * 100)}%` }} />{mode === 'Reward' && <span style={{ width: `${Math.min(100, (rewardFee / totalTax) * 100)}%` }} />}</div>
+        <p><LockKeyhole size={12} /> Market rules become permanent at launch.</p>
+      </aside>
     </div>
   );
 }

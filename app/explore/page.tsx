@@ -1,4 +1,4 @@
-import { QuoteExamples } from '@/components/quote-examples';
+import { RealtimeMarketFeed } from '@/components/realtime-market-feed';
 
 export default function ExplorePage() {
   return (
@@ -8,10 +8,10 @@ export default function ExplorePage() {
         <span className="stage-kicker copy-zh">链上市场</span>
         <h1 className="copy-en">Explore markets</h1>
         <h1 className="copy-zh">浏览市场</h1>
-        <p className="copy-en">Every market created through QUOTE, indexed from its launch receipt.</p>
-        <p className="copy-zh">所有通过 QUOTE 创建的市场，均从链上交易回执索引。</p>
+        <p className="copy-en">Every QUOTE market from the live indexer: snapshot first, then realtime stream updates.</p>
+        <p className="copy-zh">来自实时索引器的 QUOTE 市场：先读取快照，再接收实时流更新。</p>
       </section>
-      <QuoteExamples />
+      <RealtimeMarketFeed />
     </main>
   );
 }
