@@ -51,6 +51,7 @@ export function LaunchDesk() {
   const [mode, setMode] = useState<TokenMode>('Standard');
   const [quoteAddress, setQuoteAddress] = useState<string>(quoteAssets[0].address);
   const [quote, setQuote] = useState<QuoteStatus>({ state: 'idle', symbol: 'MARSCOIN' });
+  const [quoteImageFailed, setQuoteImageFailed] = useState(false);
   const [imageUrl, setImageUrl] = useState<string>();
   const [devBuy, setDevBuy] = useState(false);
   const [devBuyBnb, setDevBuyBnb] = useState('0.25');
@@ -60,6 +61,9 @@ export function LaunchDesk() {
 
   const totalTax = 25 + creatorFee + (mode === 'Reward' ? rewardFee : 0);
   const activeQuote = quoteAssets.find((asset) => asset.address.toLowerCase() === quoteAddress.toLowerCase());
+  const resolvedQuoteImage = isAddress(quoteAddress) && !quoteImageFailed
+    ? `/api/token-image/${quoteAddress.toLowerCase()}`
+    : activeQuote?.image;
   const previewImage = imageUrl || undefined;
   const complete = name.trim() && symbol.trim() && quote.state === 'valid';
 
@@ -110,6 +114,7 @@ export function LaunchDesk() {
   function selectQuote(asset: typeof quoteAssets[number]) {
     setQuoteAddress(asset.address);
     setQuote({ state: 'idle', symbol: asset.symbol });
+    setQuoteImageFailed(false);
   }
 
   function handleImage(file?: File) {
@@ -155,9 +160,9 @@ export function LaunchDesk() {
           <div className="section-number"><span>03</span><div><b>Quote asset</b><small>Any eligible BEP-20</small></div></div>
           <div className="quote-picks">
             {quoteAssets.map((asset) => <button className={activeQuote?.symbol === asset.symbol ? 'active' : ''} key={asset.symbol} type="button" onClick={() => selectQuote(asset)}><Image src={asset.image} alt="" width={28} height={28} /><b>{asset.symbol}</b></button>)}
-            <button className={!activeQuote ? 'active' : ''} type="button" onClick={() => { setQuoteAddress(''); setQuote({ state: 'idle' }); setReviewed(false); }}>+ CUSTOM</button>
+            <button className={!activeQuote ? 'active' : ''} type="button" onClick={() => { setQuoteAddress(''); setQuote({ state: 'idle' }); setQuoteImageFailed(false); setReviewed(false); }}>+ CUSTOM</button>
           </div>
-          <label className="address-field"><span>Contract address</span><div><input value={quoteAddress} onChange={(event) => { setQuoteAddress(event.target.value.trim()); setReviewed(false); }} spellCheck={false} />{quote.state === 'loading' && <LoaderCircle className="spin" size={16} />}{quote.state === 'valid' && <ShieldCheck size={16} />}</div></label>
+          <label className="address-field"><span>Contract address</span><div><input value={quoteAddress} onChange={(event) => { setQuoteAddress(event.target.value.trim()); setQuoteImageFailed(false); setReviewed(false); }} spellCheck={false} />{quote.state === 'loading' && <LoaderCircle className="spin" size={16} />}{quote.state === 'valid' && <ShieldCheck size={16} />}</div></label>
           {quote.note && <p className={`quote-check ${quote.state}`}><span />{quote.symbol && <b>{quote.symbol} · {quote.decimals} decimals</b>}{quote.note}</p>}
           <p className="eligibility-note"><LockKeyhole size={13} /> Launch requires at least $10,000 of verifiable quote-token liquidity against stablecoin or BNB.</p>
         </section>
@@ -182,7 +187,7 @@ export function LaunchDesk() {
         <div className="receipt-art">
           <div className="receipt-token">{previewImage ? <Image src={previewImage} alt="" fill unoptimized /> : <span>{symbol.slice(0, 2) || 'QT'}</span>}</div>
           <i>/</i>
-          <div className="receipt-token quote">{activeQuote ? <Image src={activeQuote.image} alt="" fill /> : <span>?</span>}</div>
+          <div className="receipt-token quote">{resolvedQuoteImage ? <Image src={resolvedQuoteImage} alt="" fill unoptimized onError={() => setQuoteImageFailed(true)} /> : <span>{(quote.symbol || '?').slice(0, 2)}</span>}</div>
           <div><small>MARKET</small><strong>{symbol || 'TOKEN'} / {quote.symbol || 'QUOTE'}</strong></div>
         </div>
         <div className="receipt-rows">{receiptRows.map(([label, value]) => <div key={label}><span>{label}</span><b>{value}</b></div>)}</div>
