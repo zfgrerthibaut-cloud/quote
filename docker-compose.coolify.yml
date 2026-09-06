@@ -1,0 +1,231 @@
+x-bounded-logs: &bounded-logs
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+x-node-hardening: &node-hardening
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  read_only: true
+  tmpfs:
+    - /tmp:size=128m,mode=1777
+  stop_grace_period: 30s
+  logging: *bounded-logs
+  restart: unless-stopped
+
+x-pg-client-env: &pg-client-env
+  QUOTE_PG_POOL_MAX: ${QUOTE_PG_POOL_MAX:-8}
+  QUOTE_PG_CONNECT_TIMEOUT_MS: ${QUOTE_PG_CONNECT_TIMEOUT_MS:-5000}
+  QUOTE_PG_IDLE_TIMEOUT_MS: ${QUOTE_PG_IDLE_TIMEOUT_MS:-30000}
+  QUOTE_PG_QUERY_TIMEOUT_MS: ${QUOTE_PG_QUERY_TIMEOUT_MS:-15000}
+  QUOTE_PG_STATEMENT_TIMEOUT_MS: ${QUOTE_PG_STATEMENT_TIMEOUT_MS:-15000}
+  QUOTE_PG_IDLE_IN_TRANSACTION_TIMEOUT_MS: ${QUOTE_PG_IDLE_IN_TRANSACTION_TIMEOUT_MS:-10000}
+
+x-backend-env: &backend-env
+  <<: *pg-client-env
+  DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in Coolify}
+  PORT: 8787
+  QUOTE_WEB_ORIGINS: ${QUOTE_WEB_ORIGINS:?set QUOTE_WEB_ORIGINS in Coolify}
+  QUOTE_HTTP_MAX_BODY_BYTES: ${QUOTE_HTTP_MAX_BODY_BYTES:-32768}
+  QUOTE_WS_MAX_CLIENTS: ${QUOTE_WS_MAX_CLIENTS:-2000}
+  QUOTE_WS_MAX_REPLAY_LAG: ${QUOTE_WS_MAX_REPLAY_LAG:-50000}
+  QUOTE_WS_MAX_BUFFERED_BYTES: ${QUOTE_WS_MAX_BUFFERED_BYTES:-1000000}
+  QUOTE_WS_ALLOW_MISSING_ORIGIN: ${QUOTE_WS_ALLOW_MISSING_ORIGIN:-false}
+  QUOTE_SSE_ENABLED: ${QUOTE_SSE_ENABLED:-true}
+  QUOTE_SSE_MAX_CLIENTS: ${QUOTE_SSE_MAX_CLIENTS:-500}
+  QUOTE_SSE_REPLAY_LIMIT: ${QUOTE_SSE_REPLAY_LIMIT:-500}
+  QUOTE_SSE_POLL_MS: ${QUOTE_SSE_POLL_MS:-750}
+  QUOTE_SSE_HEARTBEAT_MS: ${QUOTE_SSE_HEARTBEAT_MS:-15000}
+  BSC_HTTP_RPC_URL: ${BSC_HTTP_RPC_URL:?set BSC_HTTP_RPC_URL in Coolify}
+  QUOTE_ELIGIBILITY_FACTORY_ADDRESS: ${QUOTE_ELIGIBILITY_FACTORY_ADDRESS:?set QUOTE_ELIGIBILITY_FACTORY_ADDRESS in Coolify}
+  QUOTE_ELIGIBILITY_STABLE_USD_TOKENS: ${QUOTE_ELIGIBILITY_STABLE_USD_TOKENS:-}
+  QUOTE_ELIGIBILITY_CHAINLINK_FEEDS_JSON: ${QUOTE_ELIGIBILITY_CHAINLINK_FEEDS_JSON:-{}}
+  QUOTE_ELIGIBILITY_ALLOWED_POOL_FEES: ${QUOTE_ELIGIBILITY_ALLOWED_POOL_FEES:-10000}
+  QUOTE_ELIGIBILITY_MIN_QUOTE_DEPTH_USD: ${QUOTE_ELIGIBILITY_MIN_QUOTE_DEPTH_USD:-10000}
+  QUOTE_ELIGIBILITY_TWAP_WINDOW_SECONDS: ${QUOTE_ELIGIBILITY_TWAP_WINDOW_SECONDS:-900}
+  QUOTE_ELIGIBILITY_MAX_BODY_BYTES: ${QUOTE_ELIGIBILITY_MAX_BODY_BYTES:-1024}
+  QUOTE_ELIGIBILITY_RATE_LIMIT_PER_MINUTE: ${QUOTE_ELIGIBILITY_RATE_LIMIT_PER_MINUTE:-30}
+  QUOTE_ELIGIBILITY_RPC_TIMEOUT_MS: ${QUOTE_ELIGIBILITY_RPC_TIMEOUT_MS:-5000}
+  QUOTE_ELIGIBILITY_RPC_MAX_ATTEMPTS: ${QUOTE_ELIGIBILITY_RPC_MAX_ATTEMPTS:-2}
+  GMGN_API_KEY: ${GMGN_API_KEY:-}
+  GMGN_CLIENT_ID: ${GMGN_CLIENT_ID:-}
+  CODEX_API_KEY: ${CODEX_API_KEY:-}
+
+x-indexer-env: &indexer-env
+  <<: *pg-client-env
+  DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in Coolify}
+  BSC_HTTP_RPC_URL: ${BSC_HTTP_RPC_URL:?set BSC_HTTP_RPC_URL in Coolify}
+  BSC_WSS_RPC_URL: ${BSC_WSS_RPC_URL:?set BSC_WSS_RPC_URL in Coolify}
+  QUOTE_INDEXER_REGISTRY_JSON: ${QUOTE_INDEXER_REGISTRY_JSON:?set QUOTE_INDEXER_REGISTRY_JSON in Coolify}
+  QUOTE_INDEXER_CONFIRMATION_DEPTH: ${QUOTE_INDEXER_CONFIRMATION_DEPTH:-15}
+  QUOTE_INDEXER_CHUNK_SIZE: ${QUOTE_INDEXER_CHUNK_SIZE:-250}
+  QUOTE_INDEXER_MAX_REORG_DEPTH: ${QUOTE_INDEXER_MAX_REORG_DEPTH:-256}
+  QUOTE_INDEXER_POLL_MS: ${QUOTE_INDEXER_POLL_MS:-15000}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-quote}
+      POSTGRES_USER: ${POSTGRES_USER:-quote}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Coolify}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - max_connections=80
+      - -c
+      - wal_compression=on
+      - -c
+      - log_min_duration_statement=1000
+    volumes:
+      - quote-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    mem_limit: 3g
+    cpus: 2.00
+    shm_size: 1g
+    security_opt:
+      - no-new-privileges:true
+    logging: *bounded-logs
+    restart: unless-stopped
+
+  migrate:
+    <<: *node-hardening
+    image: ${QUOTE_BACKEND_IMAGE:-quote-backend:local}
+    build:
+      context: ./backend
+    command: ["node", "--experimental-strip-types", "src/migrate.ts"]
+    environment:
+      <<: *pg-client-env
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in Coolify}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: 0.50
+    restart: "no"
+
+  api:
+    <<: *node-hardening
+    image: ${QUOTE_BACKEND_IMAGE:-quote-backend:local}
+    build:
+      context: ./backend
+    command: ["node", "--experimental-strip-types", "src/server.ts"]
+    environment:
+      <<: *backend-env
+      NODE_OPTIONS: --max-old-space-size=768
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - "8787"
+    healthcheck:
+      test: ["CMD", "node", "--experimental-strip-types", "src/healthcheck.ts", "api"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    mem_limit: 1g
+    cpus: 1.25
+
+  indexer:
+    <<: *node-hardening
+    image: ${QUOTE_BACKEND_IMAGE:-quote-backend:local}
+    build:
+      context: ./backend
+    command: ["node", "--experimental-strip-types", "src/indexer-main.ts"]
+    environment:
+      <<: *indexer-env
+      NODE_OPTIONS: --max-old-space-size=768
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "--experimental-strip-types", "src/healthcheck.ts", "indexer"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    mem_limit: 1g
+    cpus: 1.25
+
+  media-worker:
+    <<: *node-hardening
+    image: ${QUOTE_BACKEND_IMAGE:-quote-backend:local}
+    build:
+      context: ./backend
+    command: ["node", "--experimental-strip-types", "src/media-worker.ts"]
+    environment:
+      <<: *pg-client-env
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in Coolify}
+      GMGN_API_KEY: ${GMGN_API_KEY:-}
+      GMGN_CLIENT_ID: ${GMGN_CLIENT_ID:-}
+      CODEX_API_KEY: ${CODEX_API_KEY:-}
+      MEDIA_WORKER_CONCURRENCY: ${MEDIA_WORKER_CONCURRENCY:-2}
+      MEDIA_WORKER_LEASE_SECONDS: ${MEDIA_WORKER_LEASE_SECONDS:-120}
+      MEDIA_WORKER_IDLE_MS: ${MEDIA_WORKER_IDLE_MS:-1000}
+      NODE_OPTIONS: --max-old-space-size=768
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 1g
+    cpus: 0.75
+
+  frontend:
+    <<: *node-hardening
+    image: ${QUOTE_FRONTEND_IMAGE:-quote-frontend:local}
+    build:
+      context: ./app
+      args:
+        NEXT_PUBLIC_QUOTE_LAUNCHPAD: ${NEXT_PUBLIC_QUOTE_LAUNCHPAD:-}
+        NEXT_PUBLIC_QUOTE_API_URL: ${NEXT_PUBLIC_QUOTE_API_URL:?set NEXT_PUBLIC_QUOTE_API_URL in Coolify}
+        NEXT_PUBLIC_QUOTE_WS_URL: ${NEXT_PUBLIC_QUOTE_WS_URL:-}
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      SHUTDOWN_TIMEOUT_MS: 25000
+      NODE_OPTIONS: --max-old-space-size=512
+      QUOTE_BACKEND_URL: ${QUOTE_BACKEND_URL:-http://api:8787}
+      BSC_RPC_URL: ${BSC_RPC_URL:-}
+      NEXT_PUBLIC_QUOTE_LAUNCHPAD: ${NEXT_PUBLIC_QUOTE_LAUNCHPAD:-}
+      NEXT_PUBLIC_QUOTE_API_URL: ${NEXT_PUBLIC_QUOTE_API_URL:?set NEXT_PUBLIC_QUOTE_API_URL in Coolify}
+      NEXT_PUBLIC_QUOTE_WS_URL: ${NEXT_PUBLIC_QUOTE_WS_URL:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "scripts/healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    mem_limit: 768m
+    cpus: 1.00
+
+volumes:
+  quote-postgres-data:
