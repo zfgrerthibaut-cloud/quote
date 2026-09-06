@@ -2,6 +2,7 @@
 
 import { ArrowLeft, ExternalLink, Radio } from 'lucide-react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { isAddress } from 'viem';
 
@@ -59,7 +60,7 @@ export function MarketDetail({ address }: { address: string }) {
 
   useEffect(() => {
     if (!API_URL || !normalizedAddress) {
-      setState(API_URL ? 'missing' : 'offline');
+      queueMicrotask(() => setState(API_URL ? 'missing' : 'offline'));
       return;
     }
     const controller = new AbortController();
@@ -82,7 +83,7 @@ export function MarketDetail({ address }: { address: string }) {
 
   return (
     <main className="page-main market-detail-page">
-      <a className="market-back" href="/explore"><ArrowLeft size={14} /> Explore markets</a>
+      <Link className="market-back" href="/explore"><ArrowLeft size={14} /> Explore markets</Link>
       {state !== 'ready' || !market ? (
         <section className="market-detail-empty">
           <Radio size={18} />
