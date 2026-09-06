@@ -1,4 +1,4 @@
-const DEXSCREENER_TOKEN_URL = 'https://api.dexscreener.com/latest/dex/tokens/';
+const DEXSCREENER_TOKEN_URL = 'https://api.dexscreener.com/tokens/v1/bsc/';
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const MAX_DEX_BODY_BYTES = 512_000;
 const DEX_TIMEOUT_MS = 4_500;
@@ -147,15 +147,15 @@ async function fetchDexScreener(address: string) {
       throw new Error(`dexscreener_${response.status}`);
     }
 
-    return JSON.parse(await readLimitedText(response, MAX_DEX_BODY_BYTES)) as { pairs?: unknown };
+    return JSON.parse(await readLimitedText(response, MAX_DEX_BODY_BYTES)) as unknown;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-function selectBscPairs(payload: { pairs?: unknown }, address: string) {
+function selectBscPairs(payload: unknown, address: string) {
   const normalizedAddress = address.toLowerCase();
-  const pairs = Array.isArray(payload.pairs) ? payload.pairs.filter(isDexPair) : [];
+  const pairs = Array.isArray(payload) ? payload.filter(isDexPair) : [];
 
   return pairs
     .filter((pair) => {

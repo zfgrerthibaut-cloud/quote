@@ -1,4 +1,4 @@
-const DEXSCREENER_TOKEN_URL = 'https://api.dexscreener.com/latest/dex/tokens/';
+const DEXSCREENER_TOKEN_URL = 'https://api.dexscreener.com/tokens/v1/bsc/';
 const GMGN_TOKEN_URL = 'https://openapi.gmgn.ai/v1/token/info';
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const MAX_JSON_BYTES = 512_000;
@@ -146,8 +146,8 @@ async function fetchJson(url: string, headers: HeadersInit) {
 }
 
 async function resolveDexScreener(address: string) {
-  const payload = asRecord(await fetchJson(`${DEXSCREENER_TOKEN_URL}${address}`, { accept: 'application/json' }));
-  const pairs = Array.isArray(payload.pairs) ? payload.pairs.filter(isDexPair) : [];
+  const payload = await fetchJson(`${DEXSCREENER_TOKEN_URL}${address}`, { accept: 'application/json' });
+  const pairs = Array.isArray(payload) ? payload.filter(isDexPair) : [];
   return pairs
     .filter((pair) => asString(pair.chainId)?.toLowerCase() === 'bsc' && tokenAddress(pair.baseToken) === address)
     .sort((left, right) => liquidityUsd(right) - liquidityUsd(left))
@@ -295,7 +295,8 @@ export async function GET(request: Request, { params }: RouteContext) {
   const normalized = address.toLowerCase();
   const cache = edgeCache();
   const cacheKey = canonicalCacheRequest(request, normalized);
-  const cached = await cache?.match(cacheKey);
+  let cached: Response | undefined;
+  try { cached = await cache?.match(cacheKey); } catch { /* some runtimes expose Cache API without request context */ }
   if (cached) return cached;
   const image = await sharedResolve(normalized);
   const response = image ? imageResponse(image) : reject(404, true);
