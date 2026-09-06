@@ -14,8 +14,12 @@ const POOL = '0x7777777777777777777777777777777777777777';
 const LOCKER = '0x8888888888888888888888888888888888888888';
 const REFERENCE_TOKEN = '0x9999999999999999999999999999999999999999';
 const REFERENCE_POOL = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const IMPLEMENTATION = '0xabababababababababababababababababababab';
 const ZERO = '0x0000000000000000000000000000000000000000';
 const HASH = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' as Hex;
+const PROXY_HASH = '0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' as Hex;
+const IMPLEMENTATION_HASH = '0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd' as Hex;
+const OTHER_HASH = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' as Hex;
 
 test('postgres store attaches direct valuation facts even when engine events arrive before the launchpad market event', async () => {
   const client = new FakePgClient();
@@ -112,7 +116,7 @@ test('postgres store attaches direct valuation facts even when engine events arr
 
 test('postgres registry rejects legacy NULL runtime pins without backfilling', async () => {
   const entry = registryInstallEntry();
-  const client = new FakeRegistryPgClient(entry);
+  const client = new FakeRegistryPgClient(registryRow(entry, { runtime_code_hash: null }));
   const store = new PostgresIndexerStore({ connect: async () => client } as never);
 
   await assert.rejects(store.installRegistry([entry]), /registry_runtime_codehash_legacy_null/);
@@ -122,29 +126,59 @@ test('postgres registry rejects legacy NULL runtime pins without backfilling', a
   assert.equal(statements.includes('ROLLBACK'), true);
 });
 
+test('postgres registry install is idempotent for identical plain runtime pins', async () => {
+  const entry = registryInstallEntry();
+  const client = new FakeRegistryPgClient(registryRow(entry));
+  const store = new PostgresIndexerStore({ connect: async () => client } as never);
+
+  await assert.doesNotReject(store.installRegistry([entry]));
+
+  const statements = client.statements.join('\n');
+  assert.match(statements, /SELECT address, start_block::text, abi_version_hash/);
+  assert.equal(statements.includes('ROLLBACK'), false);
+  assert.equal(statements.includes('COMMIT'), true);
+});
+
+test('postgres registry install is idempotent for identical ERC-1967 UUPS runtime pins', async () => {
+  const entry = uupsRegistryInstallEntry();
+  const client = new FakeRegistryPgClient(registryRow(entry));
+  const store = new PostgresIndexerStore({ connect: async () => client } as never);
+
+  await assert.doesNotReject(store.installRegistry([entry]));
+
+  assert.equal(client.statements.includes('COMMIT'), true);
+});
+
+test('postgres registry rejects conflicting ERC-1967 UUPS runtime pins cleanly', async () => {
+  const entry = uupsRegistryInstallEntry();
+  const client = new FakeRegistryPgClient(registryRow(entry, {
+    implementation_runtime_code_hash: buffer(OTHER_HASH),
+  }));
+  const store = new PostgresIndexerStore({ connect: async () => client } as never);
+
+  await assert.rejects(store.installRegistry([entry]), /registry_runtime_pin_conflict/);
+
+  const statements = client.statements.join('\n');
+  assert.equal(statements.includes('invalid_database_bytes'), false);
+  assert.equal(statements.includes('ROLLBACK'), true);
+});
+
 class FakeRegistryPgClient {
   statements: string[] = [];
-  private readonly entry: RegistryInstallEntry;
+  private readonly existingRow: Record<string, unknown>;
 
-  constructor(entry: RegistryInstallEntry) {
-    this.entry = entry;
+  constructor(existingRow: Record<string, unknown>) {
+    this.existingRow = existingRow;
   }
 
   async query(sql: string) {
     this.statements.push(sql);
     if (sql.includes('INSERT INTO indexer_contract_registry')) return { rowCount: 0, rows: [] };
-    if (sql.includes('SELECT abi_version_hash, kind, runtime_code_hash')) {
-      return {
-        rowCount: 1,
-        rows: [{
-          abi_version_hash: buffer(this.entry.abiVersionHash),
-          kind: 'plain',
-          runtime_code_hash: null,
-          proxy_runtime_code_hash: null,
-          implementation_address: null,
-          implementation_runtime_code_hash: null,
-        }],
-      };
+    if (sql.includes('AND address = $2 AND start_block = $3')) {
+      return { rowCount: 1, rows: [this.existingRow] };
+    }
+    if (sql.includes('FROM indexer_contract_registry WHERE chain_id = $1')) {
+      return { rowCount: 1, rows: [this.existingRow] };
     }
     return { rowCount: 1, rows: [] };
   }
@@ -224,6 +258,33 @@ function registryInstallEntry(): RegistryInstallEntry {
   };
 }
 
-function buffer(value: Hex) {
+function uupsRegistryInstallEntry(): RegistryInstallEntry {
+  return {
+    ...registryInstallEntry(),
+    kind: 'erc1967-uups',
+    runtimeCodeHash: PROXY_HASH,
+    proxyRuntimeCodeHash: PROXY_HASH,
+    implementationAddress: IMPLEMENTATION as Address,
+    implementationRuntimeCodeHash: IMPLEMENTATION_HASH,
+  };
+}
+
+function registryRow(entry: RegistryInstallEntry, overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    address: buffer(entry.address),
+    start_block: entry.startBlock.toString(),
+    abi_version_hash: buffer(entry.abiVersionHash),
+    kind: entry.kind,
+    runtime_code_hash: buffer(entry.runtimeCodeHash),
+    proxy_runtime_code_hash: entry.proxyRuntimeCodeHash === null ? null : buffer(entry.proxyRuntimeCodeHash),
+    implementation_address: entry.implementationAddress === null ? null : buffer(entry.implementationAddress),
+    implementation_runtime_code_hash: entry.implementationRuntimeCodeHash === null
+      ? null
+      : buffer(entry.implementationRuntimeCodeHash),
+    ...overrides,
+  };
+}
+
+function buffer(value: Hex | Address) {
   return Buffer.from(value.slice(2), 'hex');
 }

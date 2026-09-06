@@ -15,6 +15,28 @@ This directory starts the VPS-side source of truth for the QUOTE market feed and
 
 This foundation deliberately contains no default RPC URL, launchpad address, database password or signing key. Runtime services must fail closed until explicit production configuration is supplied.
 
+## API and realtime limits
+
+The API process serves `/v1/markets`, `/v1/stream`, `/v1/ws`, `/v1/media/...` and
+`/v1/quote-token/eligibility`. Browser origins must be listed in `QUOTE_WEB_ORIGINS`.
+WebSocket upgrades reject a missing `Origin` header unless `QUOTE_WS_ALLOW_MISSING_ORIGIN=true`
+is set for local/dev tooling. Do not enable that exception on the public API host.
+
+Runtime caps:
+
+- `QUOTE_HTTP_MAX_BODY_BYTES` defaults to `32768`.
+- `QUOTE_WS_MAX_CLIENTS` defaults to `2000`.
+- `QUOTE_WS_MAX_REPLAY_LAG` defaults to `50000` outbox events; older clients receive a resync signal.
+- `QUOTE_WS_MAX_BUFFERED_BYTES` defaults to `1000000`.
+- `QUOTE_SSE_ENABLED` defaults to `true`; set it to `false` only when WebSocket support is confirmed.
+- `QUOTE_SSE_MAX_CLIENTS` defaults to `500`.
+- `QUOTE_SSE_REPLAY_LIMIT`, `QUOTE_SSE_POLL_MS` and `QUOTE_SSE_HEARTBEAT_MS` default to `500`, `750` and `15000`.
+
+All Node processes use the same bounded PostgreSQL client settings: `QUOTE_PG_POOL_MAX`,
+`QUOTE_PG_CONNECT_TIMEOUT_MS`, `QUOTE_PG_IDLE_TIMEOUT_MS`, `QUOTE_PG_QUERY_TIMEOUT_MS`,
+`QUOTE_PG_STATEMENT_TIMEOUT_MS` and `QUOTE_PG_IDLE_IN_TRANSACTION_TIMEOUT_MS`. The defaults are
+sized for the single VPS compose file, not for running many replicas behind a load balancer.
+
 Run:
 
 ```sh

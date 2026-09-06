@@ -61,3 +61,10 @@ must fail while `DATABASE_URL`, BSC RPC endpoints, the indexer registry or web-o
 missing. Plain registry entries pin the canonical ABI and runtime hash. UUPS entries additionally
 pin proxy runtime, implementation slot/address and implementation runtime; the indexer revalidates
 them on every sync and halts on drift.
+
+Keep `QUOTE_PG_POOL_MAX` conservative on VPS 90: every API, indexer, media-worker and migration
+container owns its own pool. The default `8` leaves room under PostgreSQL `max_connections=80` while
+still handling the expected realtime feed. Public WebSocket upgrades require a configured Origin;
+`QUOTE_WS_ALLOW_MISSING_ORIGIN=true` is only for local/dev clients. SSE remains enabled as a browser
+fallback by default, with `QUOTE_SSE_MAX_CLIENTS=500`; disable it only after verifying WebSocket
+delivery through the production proxy.

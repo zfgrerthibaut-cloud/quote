@@ -83,45 +83,84 @@ function sseResponse(
   let poll: NodeJS.Timeout | null = null;
   let heartbeat: NodeJS.Timeout | null = null;
   let busy = false;
+  let closed = false;
   let released = false;
   const release = () => {
     if (released) return;
     released = true;
     releaseClient();
   };
+  const cleanup = () => {
+    if (poll) clearInterval(poll);
+    if (heartbeat) clearInterval(heartbeat);
+    poll = null;
+    heartbeat = null;
+    release();
+  };
+  let flushNow: (() => void) | null = null;
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder();
-      const send = (value: string) => controller.enqueue(encoder.encode(value));
+      const send = (value: string, force = false) => {
+        if (closed) return false;
+        if (!force && controller.desiredSize !== null && controller.desiredSize <= 0) return false;
+        try {
+          controller.enqueue(encoder.encode(value));
+          return true;
+        } catch {
+          closed = true;
+          cleanup();
+          return false;
+        }
+      };
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        cleanup();
+        try {
+          controller.close();
+        } catch {
+          // already closed or cancelled
+        }
+      };
       const flush = async () => {
-        if (busy) return;
+        if (busy || closed) return;
         busy = true;
         try {
           const events = await readOutboxAfter(pool, cursor, options.maxSseReplay + 1);
+          if (closed) return;
           if (events.length > options.maxSseReplay) {
-            send(`event: resync_required\ndata: ${JSON.stringify({ schemaVersion: 1, type: 'resync_required' })}\n\n`);
+            send(`event: resync_required\ndata: ${JSON.stringify({ schemaVersion: 1, type: 'resync_required' })}\n\n`, true);
+            close();
             return;
           }
           for (const event of events) {
-            cursor = BigInt(event.id);
-            send(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+            if (closed) return;
+            const nextCursor = BigInt(event.id);
+            if (!send(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)) return;
+            cursor = nextCursor;
           }
         } catch {
-          send(`event: stream_error\ndata: {"type":"stream_error"}\n\n`);
+          send(`event: stream_error\ndata: {"type":"stream_error"}\n\n`, true);
         } finally {
           busy = false;
         }
       };
-      send(': connected\n\n');
+      flushNow = () => void flush();
+      send(': connected\n\n', true);
       void flush();
       poll = setInterval(() => void flush(), options.ssePollMs);
-      heartbeat = setInterval(() => send(`: heartbeat ${Date.now()}\n\n`), options.sseHeartbeatMs);
+      heartbeat = setInterval(() => {
+        if (send(`: heartbeat ${Date.now()}\n\n`)) void flush();
+      }, options.sseHeartbeatMs);
+    },
+    pull() {
+      flushNow?.();
     },
     cancel() {
-      if (poll) clearInterval(poll);
-      if (heartbeat) clearInterval(heartbeat);
-      release();
+      closed = true;
+      cleanup();
     },
   });
 

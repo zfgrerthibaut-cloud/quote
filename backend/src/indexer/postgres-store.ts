@@ -54,7 +54,7 @@ export class PostgresIndexerStore implements IndexerStore {
           continue;
         }
         const existing = await client.query(
-          `SELECT abi_version_hash, kind, runtime_code_hash, proxy_runtime_code_hash,
+          `SELECT address, start_block::text, abi_version_hash, kind, runtime_code_hash, proxy_runtime_code_hash,
                   implementation_address, implementation_runtime_code_hash
              FROM indexer_contract_registry
            WHERE chain_id = $1 AND address = $2 AND start_block = $3`,

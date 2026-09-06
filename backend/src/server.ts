@@ -102,6 +102,7 @@ export async function serveRequest(request: IncomingMessage, response: ServerRes
 
   const abortController = new AbortController();
   let completed = false;
+  let bodyDone = false;
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   const abort = () => {
     if (!completed) {
@@ -133,16 +134,21 @@ export async function serveRequest(request: IncomingMessage, response: ServerRes
 
     reader = webResponse.body.getReader();
     while (!abortController.signal.aborted) {
-      const { done, value } = await reader.read();
+      const { done, value } = await reader.read().catch((error) => {
+        if (abortController.signal.aborted) return { done: true, value: undefined };
+        throw error;
+      });
       if (done) break;
       if (response.destroyed) break;
-      response.write(value);
+      if (!(await writeResponseChunk(response, value, abortController.signal))) break;
     }
+    bodyDone = true;
     if (!response.destroyed) {
       completed = true;
       response.end();
     }
   } catch (error) {
+    if (abortController.signal.aborted || (error instanceof Error && error.message === 'request_aborted')) return;
     if (!(error instanceof PayloadTooLargeError)) throw error;
     if (!response.destroyed) {
       response.writeHead(413, {
@@ -153,12 +159,45 @@ export async function serveRequest(request: IncomingMessage, response: ServerRes
       response.end();
     }
   } finally {
-    if (reader) await reader.cancel().catch(() => undefined);
+    if (reader && !bodyDone) await reader.cancel().catch(() => undefined);
     completed = true;
     request.off('aborted', abort);
     response.off('close', abort);
     response.off('error', abort);
   }
+}
+
+async function writeResponseChunk(response: ServerResponse, value: Uint8Array, signal: AbortSignal) {
+  if (signal.aborted || response.destroyed) return false;
+  if (response.write(value)) return true;
+  await waitForDrain(response, signal);
+  return !signal.aborted && !response.destroyed;
+}
+
+function waitForDrain(response: ServerResponse, signal: AbortSignal) {
+  if (signal.aborted || response.destroyed) return Promise.resolve();
+
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      signal.removeEventListener('abort', resolveSafely);
+      response.off('drain', resolveSafely);
+      response.off('close', resolveSafely);
+      response.off('error', rejectSafely);
+    };
+    const resolveSafely = () => {
+      cleanup();
+      resolve();
+    };
+    const rejectSafely = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    signal.addEventListener('abort', resolveSafely, { once: true });
+    response.once('drain', resolveSafely);
+    response.once('close', resolveSafely);
+    response.once('error', rejectSafely);
+  });
 }
 
 class PayloadTooLargeError extends Error {}

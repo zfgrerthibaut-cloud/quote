@@ -329,7 +329,6 @@ export async function evaluateQuoteTokenEligibility(
 
     const poolBalance = await readTokenBalanceOf(rpc, quoteToken, referencePool, block.tag);
     if (poolBalance === null) return fail('quote_pool_balance_unreadable');
-    const referenceUsdPrice = parseSerializedRational(referenceUsd.priceUsd);
 
     evidence.price = {
       referencePerQuoteCurrent: serializeRatio(referencePerQuoteCurrent),
@@ -349,7 +348,6 @@ export async function evaluateQuoteTokenEligibility(
         blockTag: block.tag,
         quoteToken,
         referenceToken,
-        referencePool,
         poolFee: pool.fee,
         quoteDecimals,
         referenceDecimals,
@@ -558,7 +556,6 @@ async function readExecutableDepthEvidence(params: {
   blockTag: string;
   quoteToken: string;
   referenceToken: string;
-  referencePool: string;
   poolFee: number;
   quoteDecimals: number;
   referenceDecimals: number;
@@ -572,7 +569,6 @@ async function readExecutableDepthEvidence(params: {
     blockTag,
     quoteToken,
     referenceToken,
-    referencePool: _referencePool,
     poolFee,
     quoteDecimals,
     referenceDecimals,

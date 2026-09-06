@@ -1,5 +1,7 @@
 import type { Pool } from 'pg';
 
+import { clampOutboxEventId } from './outbox-id.ts';
+
 export type MarketSort = 'market_cap' | 'newest' | 'volume_24h';
 export type MarketEngineFilter = 'direct' | 'curve' | null;
 
@@ -289,10 +291,11 @@ export async function listMarkets(pool: Pool, query: MarketListQuery) {
 }
 
 export async function readOutboxAfter(pool: Pool, after: bigint, limit = 500) {
+  const boundedAfter = clampOutboxEventId(after);
   const result = await pool.query(
     `SELECT id::text, topic, aggregate_id, payload, created_at
      FROM outbox WHERE id > $1 ORDER BY id ASC LIMIT $2`,
-    [after.toString(), Math.max(1, Math.min(limit, 1_000))],
+    [boundedAfter.toString(), Math.max(1, Math.min(limit, 1_000))],
   );
   return result.rows.map((row) => ({
     schemaVersion: 1,
