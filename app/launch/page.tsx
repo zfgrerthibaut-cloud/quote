@@ -9,8 +9,8 @@ export default function LaunchPage() {
           <span className="stage-kicker copy-zh">创建市场</span>
           <h1 className="copy-en">Build the<br /><i>market.</i></h1>
           <h1 className="copy-zh">发行</h1>
-          <p className="copy-en">One token, any eligible quote. Choose the path, fees and reward logic before anything is signed.</p>
-          <p className="copy-zh">一种代币，任意符合条件的计价资产。签名前选择发行路径、费用和奖励机制。</p>
+          <p className="copy-en">One token, any eligible quote. Review the market and LP fee split before contracts are live.</p>
+          <p className="copy-zh">一种代币，任意符合条件的计价资产。合约上线前仅用于检查市场配置与 LP 费用分配。</p>
         </header>
         <LaunchDesk />
       </section>

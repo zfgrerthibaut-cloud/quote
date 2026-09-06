@@ -4,6 +4,7 @@ import { Activity, ArrowDownUp, ArrowRight, Clock3, ExternalLink, Radio, Search,
 import { AnimatePresence, motion } from 'motion/react';
 import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
+import { normalizeRealtimeMessage } from '@/lib/realtime-market-events';
 
 const QUOTE_API_URL = (process.env.NEXT_PUBLIC_QUOTE_API_URL ?? '').replace(/\/+$/, '');
 const QUOTE_WS_URL = (process.env.NEXT_PUBLIC_QUOTE_WS_URL ?? '').replace(/\/+$/, '');
@@ -471,6 +472,7 @@ export function RealtimeMarketFeed() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [paramsReady, setParamsReady] = useState(false);
+  const [liveRefreshNonce, setLiveRefreshNonce] = useState(0);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -513,20 +515,32 @@ export function RealtimeMarketFeed() {
     let fallback: EventSource | null = null;
     let stopped = false;
     let resumeAfter: string | undefined;
+    let refetchTimer: number | undefined;
+
+    const requestSafeRefetch = () => {
+      if (stopped || refetchTimer !== undefined) return;
+      refetchTimer = window.setTimeout(() => {
+        refetchTimer = undefined;
+        setLiveRefreshNonce((current) => current + 1);
+      }, 500);
+    };
 
     const applyEvent = (payload: unknown, eventType = 'message', explicitEventId?: string) => {
-      const nextEventId = explicitEventId || eventIdFromPayload(payload);
+      const message = normalizeRealtimeMessage(payload, eventType, explicitEventId);
+      const nextEventId = message.id || eventIdFromPayload(message.payload);
       if (nextEventId) {
         resumeAfter = nextEventId;
         setLastEventId(nextEventId);
       }
 
-      if (isDeleteEvent(payload, eventType)) {
-        setMarkets((current) => removeMarkets(current, payload));
+      if (message.shouldRefetch) requestSafeRefetch();
+
+      if (isDeleteEvent(message.payload, message.type)) {
+        setMarkets((current) => removeMarkets(current, message.payload));
         return;
       }
 
-      const incoming = extractMarkets(payload)
+      const incoming = extractMarkets(message.payload)
         .map((market) => normalizeMarket(market, nextEventId))
         .filter((market): market is MarketRecord => Boolean(market));
       if (incoming.length > 0) setMarkets((current) => mergeMarkets(current, incoming));
@@ -553,7 +567,7 @@ export function RealtimeMarketFeed() {
           setError('A live update could not be decoded.');
         }
       };
-      for (const eventName of ['market', 'markets', 'upsert', 'delete', 'market.launched', 'market.updated', 'market.deleted', 'trade.executed', 'market.graduated', 'chain.reorg']) {
+      for (const eventName of ['market', 'markets', 'upsert', 'delete', 'market.launched', 'market.updated', 'market.deleted', 'market.trade.upsert', 'trade.executed', 'market.graduated', 'chain.reorg', 'markets.rebuilt', 'indexer.rebuilt']) {
         fallback.addEventListener(eventName, fallback.onmessage as EventListener);
       }
       fallback.onerror = () => setStatus('reconnecting');
@@ -627,6 +641,7 @@ export function RealtimeMarketFeed() {
     return () => {
       controller.abort();
       stopped = true;
+      if (refetchTimer !== undefined) window.clearTimeout(refetchTimer);
       socket?.close();
       fallback?.close();
     };
@@ -658,7 +673,7 @@ export function RealtimeMarketFeed() {
     }
     void refreshView();
     return () => controller.abort();
-  }, [engineFilter, paramsReady, quoteFilter, rewardOnly, searchQuery, sort]);
+  }, [engineFilter, liveRefreshNonce, paramsReady, quoteFilter, rewardOnly, searchQuery, sort]);
 
   useEffect(() => {
     if (!paramsReady) return;

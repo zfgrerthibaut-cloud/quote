@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
 import { erc20Abi, isAddress, type Address } from 'viem';
-import { usePublicClient } from 'wagmi';
+import { useAccount, usePublicClient } from 'wagmi';
 
 const quoteAssets = [
   { symbol: 'MARSCOIN', address: '0xfe189e97832da1573e4e4ff034f4ffc3a15c7777', image: '/tokens/marscoin.png' },
@@ -45,6 +45,7 @@ function FeeRail({ label, detail, values, value, onChange }: { label: string; de
 }
 
 export function LaunchDesk() {
+  const { address: connectedAddress } = useAccount();
   const publicClient = usePublicClient();
   const [name, setName] = useState('');
   const [symbol, setSymbol] = useState('');
@@ -56,6 +57,7 @@ export function LaunchDesk() {
   const [devBuy, setDevBuy] = useState(false);
   const [devBuyBnb, setDevBuyBnb] = useState('0.25');
   const [creatorLpShare, setCreatorLpShare] = useState(7000);
+  const [creatorFeeRecipient, setCreatorFeeRecipient] = useState('');
   const [reviewed, setReviewed] = useState(false);
 
   const platformLpShare = 10_000 - creatorLpShare;
@@ -64,9 +66,17 @@ export function LaunchDesk() {
     ? `/api/token-image/${quoteAddress.toLowerCase()}`
     : activeQuote?.image;
   const previewImage = imageUrl || undefined;
-  const complete = Boolean(name.trim() && symbol.trim() && quote.state === 'valid');
+  const creatorRecipientRequired = creatorLpShare > 0;
+  const creatorRecipientValid = !creatorRecipientRequired || isAddress(creatorFeeRecipient);
+  const complete = Boolean(name.trim() && symbol.trim() && quote.state === 'valid' && creatorRecipientValid);
 
   useEffect(() => () => { if (imageUrl?.startsWith('blob:')) URL.revokeObjectURL(imageUrl); }, [imageUrl]);
+
+  useEffect(() => {
+    if (creatorLpShare > 0 && !creatorFeeRecipient && connectedAddress) {
+      queueMicrotask(() => setCreatorFeeRecipient(connectedAddress));
+    }
+  }, [connectedAddress, creatorFeeRecipient, creatorLpShare]);
 
   useEffect(() => {
     const address = new URLSearchParams(window.location.search).get('quote');
@@ -106,9 +116,10 @@ export function LaunchDesk() {
     ['Dev buy', devBuy ? `${devBuyBnb || '0'} BNB` : 'Off'],
     ['Pool fee', `${(POOL_FEE_BPS / 100).toFixed(2)}% fixed`],
     ['Creator LP fees', `${(creatorLpShare / 100).toFixed(0)}%`],
+    ['Creator recipient', creatorRecipientRequired ? (isAddress(creatorFeeRecipient) ? `${creatorFeeRecipient.slice(0, 6)}...${creatorFeeRecipient.slice(-4)}` : 'Required') : 'Off'],
     ['Platform LP fees', `${(platformLpShare / 100).toFixed(0)}%`],
     ['LP position', 'Permanently locked'],
-  ], [creatorLpShare, devBuy, devBuyBnb, mode, platformLpShare, quote.symbol]);
+  ], [creatorFeeRecipient, creatorLpShare, creatorRecipientRequired, devBuy, devBuyBnb, mode, platformLpShare, quote.symbol]);
 
   function selectQuote(asset: typeof quoteAssets[number]) {
     setQuoteAddress(asset.address);
@@ -185,6 +196,22 @@ export function LaunchDesk() {
           <div className="section-number"><span>04</span><div><b>LP fee allocation</b><small className="copy-en">Fixed for this market</small><small className="copy-zh">此市场永久固定</small></div></div>
           <div className="fixed-fee-row"><div><b>PancakeSwap V3 pool fee</b><small>Applies to every swap in either direction</small></div><span>{(POOL_FEE_BPS / 100).toFixed(2)}% FIXED</span></div>
           <FeeRail label="Creator share" detail="Share of collected LP fees" values={[0, 5000, 7000, 10000]} value={creatorLpShare} onChange={(next) => { setCreatorLpShare(next); setReviewed(false); }} />
+          {creatorRecipientRequired ? (
+            <label className="address-field">
+              <span className="copy-en">Creator fee recipient</span>
+              <span className="copy-zh">创建者费用接收地址</span>
+              <div>
+                <input
+                  aria-invalid={Boolean(creatorFeeRecipient && !isAddress(creatorFeeRecipient))}
+                  onChange={(event) => { setCreatorFeeRecipient(event.target.value.trim()); setReviewed(false); }}
+                  placeholder={connectedAddress || '0x...'}
+                  spellCheck={false}
+                  value={creatorFeeRecipient}
+                />
+                {creatorRecipientValid ? <ShieldCheck size={16} /> : null}
+              </div>
+            </label>
+          ) : null}
           <div className="fixed-fee-row"><div><b>Platform share</b><small>Remainder of collected LP fees</small></div><span>{(platformLpShare / 100).toFixed(0)}%</span></div>
           <div className="dev-buy-row">
             <button type="button" className={devBuy ? 'active' : ''} onClick={() => { setDevBuy(!devBuy); setReviewed(false); }}><span>{devBuy && <motion.i layoutId="dev-buy-toggle" />}</span><div><b>Creator buy</b><small>Buy at launch directly with BNB</small></div></button>
